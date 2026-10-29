@@ -1,0 +1,21 @@
+# Local development services: Postgres only.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tracera
+      POSTGRES_DB: tracera
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - tracera-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracera -d tracera"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  tracera-pg:
