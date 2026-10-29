@@ -133,7 +133,8 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 - Nothing is reported as verified, fixed, or confirmed unless the stored data says so.
 - Approval is a review decision made in a signed-in session and changes no files.
 - Secrets stay in the server environment: they are not in the web bundle, logs, or API responses, and they are redacted before every model call.
-- Every query is scoped to a workspace, cookie-authenticated changes require a custom header and a same-origin request, and API tokens are scoped, expiring, and stored hashed.
+- Every query is scoped to a workspace, cookie-authenticated changes require a custom header and a same-origin request (decided by the matched route, so percent-encoded and absolute-form URL spellings get no bypass), and API tokens are scoped, expiring, and stored hashed.
+- Two integration suites hold every registered route to a written access rule (`apps/server/test/security-routes.ts`): a security matrix for authentication, token scopes, owner-only routes, and CSRF, and a workspace isolation suite for foreign IDs. A new route fails them until its rule is added.
 - Repository files, logs, and other inputs are treated as untrusted data.
 
 ## Known limitations

@@ -66,7 +66,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 		reply.header("x-request-id", request.id);
 	});
 	app.addHook("preHandler", async (request) => {
-		if (!request.url.startsWith("/api/v1/")) return;
+		// Decide by the matched route too: the router also matches percent-encoded and absolute-form
+		// spellings (`/%61pi/v1/…`, `http://host/api/v1/…`) whose raw URL has another prefix.
+		if (
+			!request.url.startsWith("/api/v1/") &&
+			!request.routeOptions.url?.startsWith("/api/v1/")
+		)
+			return;
 		const isLogin = request.routeOptions.url === "/api/v1/auth/login";
 		if (!isLogin) {
 			request.auth = await authenticateRequest(deps.db, {

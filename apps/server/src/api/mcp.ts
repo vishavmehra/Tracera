@@ -66,7 +66,12 @@ export function registerMcpGuards(app: FastifyInstance, db: Db) {
 	app.addHook("onResponse", async (request, reply) => {
 		const auth = mcpAuth(request);
 		if (!auth) return;
-		const id = (request.params as { id?: unknown } | undefined)?.id;
+		// A refused request may name a resource of another workspace, or none: only a request that
+		// succeeded shows the ID belongs to the caller's workspace, so only then is it the audit target.
+		const id =
+			reply.statusCode < 400
+				? (request.params as { id?: unknown } | undefined)?.id
+				: undefined;
 		const prefix = typeof id === "string" ? ID.exec(id)?.[1] : undefined;
 		const targetType = prefix ? TARGETS[prefix] : undefined;
 		const tool = request.headers["x-tracera-mcp-tool"];
