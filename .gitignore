@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Secrets and local configuration (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build and test output
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+
+# Local Tracera data (defaults to ~/.tracera, but never commit a local copy)
+.tracera/
+.tracera-data/
+
+# Personal tool settings
+.claude/settings.local.json
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
