@@ -2,10 +2,17 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { MeetingExtractionOutput } from "@tracera/contracts";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupBenchShop } from "../../../scripts/bench-setup.ts";
+import { integrationConnections } from "../src/db/schema.ts";
+import { newId } from "../src/lib/ids.ts";
 import { runIndexJob } from "../src/modules/graph.ts";
+import {
+	MEETING_EXTRACT_QUEUE,
+	runMeetingExtraction,
+} from "../src/modules/meeting-extract.ts";
 import { workspacesRoot } from "../src/modules/workspace.ts";
 import { QUEUES } from "../src/queue.ts";
 import type { SandboxRunRequest } from "../src/sandbox/executor.ts";
@@ -57,12 +64,53 @@ let intruder: ReturnType<typeof asSession>;
 let intruderToken: ReturnType<typeof asToken>;
 let ownerToken: string;
 let ownerWorkspaceId = "";
+let ownerUserId = "";
 /** One of workspace A's IDs per collection (the segment before `:id`). */
 const ids: Record<string, string> = {};
 let edgeId = "";
 let questionId = "";
+let candidateId = "";
+let segmentId = "";
 let intruderRepoId = "";
 let intruderBugId = "";
+let intruderMeetingId = "";
+let intruderCandidateId = "";
+
+/** What a model could return for the Teams-style transcript: one bug that cites its segment. */
+const EXTRACTION: MeetingExtractionOutput = {
+	items: [
+		{
+			kind: "bug",
+			title: "Cart total shows NaN after applying the SAVE10 coupon",
+			description:
+				"With two items in the cart and the SAVE10 coupon applied, the total shows NaN.",
+			expected_behavior: "The discounted total is shown",
+			actual_behavior: "The total shows NaN",
+			steps: ["Add two items to the cart", "Apply the SAVE10 coupon"],
+			severity_suggestion: "unknown",
+			affected_area: "cart",
+			citations: [
+				{
+					handle: "SEG-2",
+					quote: "the total shows NaN instead of the discounted price",
+				},
+			],
+		},
+	],
+};
+
+const transcriptUpload = () => ({
+	provider: "teams",
+	consent_attested: true,
+	title: "Checkout standup",
+	transcript: {
+		filename: "teams.vtt",
+		content_type: "text/vtt",
+		data_base64: readFileSync(
+			new URL("./fixtures/meetings/teams.vtt", import.meta.url),
+		).toString("base64"),
+	},
+});
 
 async function drainIndexJobs() {
 	for (;;) {
@@ -155,12 +203,54 @@ async function json<T>(response: Promise<LightMyRequestResponse>, status = 0) {
 	return settled.json() as T;
 }
 
+/** Uploads the transcript and runs its queued extraction the way the worker does. */
+async function seedMeeting(
+	as: typeof owner,
+	repositoryId?: string,
+): Promise<{ meetingId: string; candidateId: string; segmentId: string }> {
+	const created = await json<{ meeting: { id: string } }>(
+		as("POST", "/api/v1/meetings", {
+			...transcriptUpload(),
+			...(repositoryId ? { repository_id: repositoryId } : {}),
+		}),
+		202,
+	);
+	const meetingId = created.meeting.id;
+	await ctx.pool.query(
+		"DELETE FROM pgboss.job WHERE name = $1 AND data->>'meetingId' = $2",
+		[MEETING_EXTRACT_QUEUE, meetingId],
+	);
+	await runMeetingExtraction(
+		{
+			db: ctx.db,
+			pool: ctx.pool,
+			config: ctx.config,
+			provider: scriptedProvider({ extract_meeting_bugs: EXTRACTION }),
+		},
+		meetingId,
+	);
+	const candidates = await json<{ items: Array<{ id: string }> }>(
+		as("GET", `/api/v1/meetings/${meetingId}/candidates`),
+		200,
+	);
+	const segments = await json<{ items: Array<{ id: string }> }>(
+		as("GET", `/api/v1/meetings/${meetingId}/segments`),
+		200,
+	);
+	const candidate = candidates.items[0];
+	const segment = segments.items[0];
+	if (!candidate || !segment) throw new Error("the meeting was not extracted");
+	return { meetingId, candidateId: candidate.id, segmentId: segment.id };
+}
+
 beforeAll(async () => {
 	ctx = await createTestContext();
 	setupBenchShop(ctx.config.dataDir);
 	await ctx.app.ready();
 	await resetDatabase(ctx.pool);
-	ownerWorkspaceId = (await createOwner(ctx.db)).workspaceId;
+	const created = await createOwner(ctx.db);
+	ownerWorkspaceId = created.workspaceId;
+	ownerUserId = created.userId;
 	const ownerCookie = await login(ctx);
 	owner = asSession(ctx, ownerCookie);
 
@@ -288,6 +378,22 @@ beforeAll(async () => {
 	);
 	ids.tokens = tokens.items[0]?.id ?? "";
 
+	// A meeting with one extracted candidate, and the owner's provider connection (never used).
+	const meeting = await seedMeeting(owner, ids.repositories);
+	ids.meetings = meeting.meetingId;
+	candidateId = meeting.candidateId;
+	segmentId = meeting.segmentId;
+	ids.integrations = newId("int");
+	await ctx.db.insert(integrationConnections).values({
+		id: ids.integrations,
+		workspaceId: ownerWorkspaceId,
+		userId: ownerUserId,
+		provider: "google",
+		status: "active",
+		scopes: [],
+		accessTokenSealed: "sealed",
+	});
+
 	// Workspace B: an owner with every privilege, a full-scope token, and an indexed repository.
 	await createOwner(ctx.db, "intruder@example.com");
 	const intruderCookie = await login(ctx, "intruder@example.com");
@@ -321,6 +427,9 @@ beforeAll(async () => {
 			201,
 		)
 	).bug_report.id;
+	const intruderMeeting = await seedMeeting(intruder);
+	intruderMeetingId = intruderMeeting.meetingId;
+	intruderCandidateId = intruderMeeting.candidateId;
 }, 180_000);
 afterAll(async () => ctx.close());
 
@@ -332,7 +441,12 @@ const idRoutes = () =>
 		})
 		.filter((route) => route.path.includes("/:"));
 const ownerUrl = (routePath: string) =>
-	fillPath(routePath, (collection) => ids[collection] ?? "", edgeId);
+	fillPath(
+		routePath,
+		(collection) => ids[collection] ?? "",
+		edgeId,
+		candidateId,
+	);
 
 /** Valid requests, so a 404 can only come from the workspace check. */
 function requestFor(method: Method, routePath: string) {
@@ -363,6 +477,14 @@ function requestFor(method: Method, routePath: string) {
 			decision: "approved",
 			verification_id: ids.verifications,
 			acknowledged_risks: [],
+		},
+		"PATCH /api/v1/meetings/:id": { title: "taken-over" },
+		"PATCH /api/v1/meetings/:id/candidates/:candidateId": {
+			title: "taken-over",
+		},
+		"POST /api/v1/integrations/:id/import": {
+			provider_meeting_ref: "conferenceRecords/abc-123/transcripts/tr-1",
+			consent_attested: true,
 		},
 	};
 	return {
@@ -486,12 +608,47 @@ describe("workspace isolation [mock inference, fake executor]", () => {
 		}
 	});
 
+	it("answers 404 to foreign repositories and candidates, and 422 to foreign segments, in meeting requests", async () => {
+		const own = `/api/v1/meetings/${intruderMeetingId}`;
+		const candidate = `${own}/candidates/${intruderCandidateId}`;
+		const foreignRepository = { repository_id: ids.repositories };
+		const cases: Array<[Method, string, unknown]> = [
+			[
+				"POST",
+				"/api/v1/meetings",
+				{ ...transcriptUpload(), ...foreignRepository },
+			],
+			["PATCH", own, foreignRepository],
+			["PATCH", candidate, foreignRepository],
+			["POST", `${candidate}/confirm`, foreignRepository],
+			// A candidate and a meeting that belong to different workspaces never pair up.
+			["PATCH", `${own}/candidates/${candidateId}`, { title: "x" }],
+			[
+				"PATCH",
+				`/api/v1/meetings/${ids.meetings}/candidates/${intruderCandidateId}`,
+				{ title: "x" },
+			],
+		];
+		for (const [method, url, payload] of cases)
+			expectNotFound(await intruder(method, url, payload), `${method} ${url}`);
+		// A segment of workspace A's meeting is as unknown to B's meeting as any invented one.
+		const foreignSegment = await intruder("PATCH", candidate, {
+			segment_ids: [segmentId],
+		});
+		expect(foreignSegment.statusCode).toBe(422);
+		expect(foreignSegment.body).not.toContain(segmentId);
+	});
+
 	it("lists only the caller's own workspace, whatever the filter", async () => {
 		const own = `/api/v1/repositories/${intruderRepoId}`;
-		const foreign = [...Object.values(ids), questionId];
+		const foreign = [...Object.values(ids), questionId, candidateId, segmentId];
 		for (const url of [
 			"/api/v1/repositories",
 			"/api/v1/bug-reports",
+			"/api/v1/meetings",
+			"/api/v1/integrations",
+			`/api/v1/meetings/${intruderMeetingId}/candidates`,
+			`/api/v1/meetings/${intruderMeetingId}/segments`,
 			`/api/v1/bug-reports?repository_id=${ids.repositories}`,
 			"/api/v1/investigations",
 			`/api/v1/investigations?bug_report_id=${ids["bug-reports"]}`,
@@ -555,6 +712,24 @@ describe("workspace isolation [mock inference, fake executor]", () => {
 			snapshots.snapshots.find((s) => s.id === ids.snapshots)?.status,
 		).toBe("ready");
 		expect(snapshots.snapshots.every((s) => !s.cancel_requested_at)).toBe(true);
+		const candidates = await get<{
+			items: Array<{ id: string; status: string; title: string }>;
+		}>(`/api/v1/meetings/${ids.meetings}/candidates`);
+		expect(candidates.items.map((c) => [c.id, c.status, c.title])).toEqual([
+			[candidateId, "pending_review", EXTRACTION.items[0]?.title],
+		]);
+		expect(
+			(
+				await get<{ meeting: { title: string } }>(
+					`/api/v1/meetings/${ids.meetings}`,
+				)
+			).meeting.title,
+		).toBe("Checkout standup");
+		const connection = await ctx.pool.query<{ n: number }>(
+			"SELECT count(*)::int AS n FROM integration_connections WHERE id = $1",
+			[ids.integrations],
+		);
+		expect(connection.rows[0]?.n).toBe(1);
 		expect(
 			(await asToken(ctx, ownerToken)("GET", "/api/v1/auth/me")).statusCode,
 		).toBe(200);

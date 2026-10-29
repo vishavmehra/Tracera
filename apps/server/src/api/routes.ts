@@ -119,6 +119,7 @@ import {
 } from "../modules/results.ts";
 import { type AppDeps, authOf } from "./app.ts";
 import { registerMcpGuards } from "./mcp.ts";
+import { registerMeetingRoutes } from "./meeting-routes.ts";
 
 const ReportQuerySchema = z.object({
 	format: z.enum(["json", "markdown"]).default("json"),
@@ -975,4 +976,6 @@ export function registerRoutes(app: FastifyInstance, deps: AppDeps) {
 			),
 		};
 	});
+
+	registerMeetingRoutes(app, deps); // meetings and meeting integrations
 }

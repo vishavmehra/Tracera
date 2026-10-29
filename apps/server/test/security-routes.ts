@@ -1,5 +1,6 @@
 import { type IdPrefix, type Scope, ScopeSchema } from "@tracera/contracts";
 import type { FastifyInstance } from "fastify";
+import { newId } from "../src/lib/ids.ts";
 
 // The access rule of every registered route, shared by the security
 // matrix and the workspace isolation tests. Both tests compare this table with the routes Fastify
@@ -31,6 +32,19 @@ export const ROUTE_RULES: RouteRule[] = [
 		"GET /api/v1/tokens",
 		"DELETE /api/v1/tokens/:id",
 		"POST /api/v1/patches/:id/approval",
+		"POST /api/v1/meetings",
+		"PATCH /api/v1/meetings/:id",
+		"DELETE /api/v1/meetings/:id",
+		"POST /api/v1/meetings/:id/extract",
+		"PATCH /api/v1/meetings/:id/candidates/:candidateId",
+		"POST /api/v1/meetings/:id/candidates/:candidateId/confirm",
+		"POST /api/v1/meetings/:id/candidates/:candidateId/dismiss",
+		"GET /api/v1/integrations",
+		"GET /api/v1/integrations/google/connect",
+		"GET /api/v1/integrations/google/callback",
+		"GET /api/v1/integrations/:id/meetings",
+		"POST /api/v1/integrations/:id/import",
+		"DELETE /api/v1/integrations/:id",
 	),
 	...rules(
 		"owner",
@@ -94,6 +108,11 @@ export const ROUTE_RULES: RouteRule[] = [
 		"reports:read",
 		"GET /api/v1/bug-reports",
 		"GET /api/v1/bug-reports/:id",
+		"GET /api/v1/meetings",
+		"GET /api/v1/meetings/:id",
+		"GET /api/v1/meetings/:id/segments",
+		"GET /api/v1/meetings/:id/candidates",
+		"GET /api/v1/meetings/:id/summary",
 	),
 ];
 
@@ -139,6 +158,8 @@ export const COLLECTION_PREFIX: Record<string, IdPrefix> = {
 	patches: "pat",
 	verifications: "ver",
 	tokens: "tok",
+	meetings: "mtg",
+	integrations: "int",
 };
 
 /** The collection segment before `:id`, or null for routes without one. */
@@ -148,14 +169,16 @@ export function collectionOf(path: string): string | null {
 	return index > 0 ? (segments[index - 1] ?? null) : null;
 }
 
-/** Fills `:id` (and `:edgeId`) in a route path. */
+/** Fills `:id`, `:edgeId` and `:candidateId` in a route path. */
 export function fillPath(
 	path: string,
 	id: (collection: string) => string,
 	edgeId = "1",
+	candidateId = newId("cand"),
 ): string {
 	const collection = collectionOf(path);
 	return path
 		.replace(":edgeId", edgeId)
+		.replace(":candidateId", candidateId)
 		.replace(":id", collection === null ? ":id" : id(collection));
 }

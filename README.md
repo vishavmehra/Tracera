@@ -20,6 +20,7 @@
 - The investigation pipeline described above, with dependency preparation behind an egress-restricted proxy and browser reproduction for UI bugs.
 - Review and approval of patches, resolution reports, and an audit trail.
 - A web workspace (React) for repositories, graph exploration, questions, impact, investigations, and review.
+- Meeting transcripts: upload a WebVTT, SRT, or plain-text transcript (or import one from Google Meet), review the bug candidates a model proposes with quotes from the transcript, and turn confirmed ones into bug reports and investigations (see below).
 - A local stdio MCP server so coding agents can use Tracera (see below).
 
 **Stack:** TypeScript on Node.js, Fastify, PostgreSQL with Drizzle ORM, pg-boss for background jobs, Zod schemas shared through `packages/contracts`, React with Vite and Tailwind for the web app, Docker for the sandbox, Vitest and Playwright for tests.
@@ -68,6 +69,12 @@ TRACERA_META_API_KEY=<key, when the provider is meta>
 TRACERA_OPENAI_COMPAT_BASE_URL=<base url>
 TRACERA_OPENAI_COMPAT_API_KEY=<key>
 TRACERA_MODEL_REASONING=<model id>
+# meetings (optional; Google Meet import needs all four of the Google values and the key):
+TRACERA_MODEL_MEETING=<model id, default TRACERA_MODEL_REASONING>
+GOOGLE_CLIENT_ID=<OAuth client id>
+GOOGLE_CLIENT_SECRET=<OAuth client secret>
+GOOGLE_REDIRECT_URI=<API origin>/api/v1/integrations/google/callback
+TRACERA_ENCRYPTION_KEY=<32 random bytes, base64>
 ```
 
 Repositories must be local git work trees inside one of the `TRACERA_REPO_ROOTS` paths. Docker must be running for sandboxed reproduction and verification; with `TRACERA_SANDBOX_MODE=disabled` those stages are recorded as blocked instead of running.
@@ -106,9 +113,15 @@ tool_timeout_sec = 60
 TRACERA_API_URL = "http://127.0.0.1:8787"
 ```
 
-## Google Meet (in progress)
+## Meetings and Google Meet
 
-Meeting context from Google Meet is being built and is not available yet. There is nothing to configure today.
+Meetings turn what people said in a call into reviewed bug reports. A model reads the transcript and proposes candidates; code rejects any candidate whose quotes do not occur verbatim in the segments it cites and flags likely duplicates, and the model sets no status. A person edits, dismisses, or confirms each remaining one, and confirming creates a bug report and, unless you decline, an investigation through the normal services.
+
+- **Upload.** `POST /api/v1/meetings` (signed-in session) takes a `.vtt`, `.srt`, or `.txt` transcript up to 5 MB as base64, plus an attestation that you may share it (`consent_attested`). Teams-style WebVTT, SRT, `Name: text` exports, and plain text are parsed into numbered segments.
+- **Review.** `GET /api/v1/meetings`, `/meetings/{id}`, `/segments`, `/candidates`, and `/summary` (reads also accept tokens with `reports:read`); `POST …/extract`, `PATCH …/candidates/{id}`, `POST …/confirm`, and `POST …/dismiss` need a session.
+- **Google Meet.** With the Google variables above set, `GET /api/v1/integrations/google/connect` starts an OAuth flow (state and PKCE, read-only Meet scope), `GET /api/v1/integrations/{id}/meetings` lists conferences with transcripts, and `POST /api/v1/integrations/{id}/import` imports one into the same pipeline. OAuth tokens are encrypted at rest with `TRACERA_ENCRYPTION_KEY`. The callback sends the browser to `<TRACERA_PUBLIC_URL>/meetings?integration=google&result=…`.
+
+Microsoft Teams import is not implemented; export a Teams transcript as WebVTT and upload it. There is no Meetings page in the web app yet: use the REST API.
 
 ## Testing
 
@@ -141,7 +154,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 
 - Repositories are local paths only. There is no integration with GitHub or other hosted Git providers: no remote cloning, sync, or pull-request creation.
 - Applying a patch to a working tree, committing, pushing, and opening a pull request are not implemented. Approval records a decision only.
-- Google Meet integration is in progress. There is no browser extension in this repository.
+- Meetings are available through the REST API only; the web app has no Meetings page yet. The Google Meet import is tested against recorded synthetic responses and needs your own Google Cloud OAuth client to run for real. There is no browser extension in this repository.
 - The code graph parses JavaScript, TypeScript, and SQL. Other languages are detected and counted but not parsed.
 - The Meta adapter is exercised in automated tests against a local stand-in server; running it for real needs a Meta Model API key with billing enabled.
 - Accounts come from `npm run db:seed`; there is no sign-up flow, and personal access tokens are created through the REST API because the web app has no token screen.

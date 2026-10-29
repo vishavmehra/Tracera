@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { CreateBugReportRequest } from "@tracera/contracts";
+import type { CreateBugReportRequest, ValueSource } from "@tracera/contracts";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
@@ -30,12 +30,25 @@ export function stripUrl(raw: string, keepQuery: boolean): string {
 	return url.toString();
 }
 
+/**
+ * Set only by the meeting pipeline when a reviewer confirms a candidate (meetings.ts): the report
+ * keeps its meeting provenance, and `onCreated` runs in the report's transaction (exactly once).
+ */
+export type ReportOrigin = {
+	channel: "meeting";
+	fieldSources: Readonly<Record<string, ValueSource>>;
+	evidenceProvenance: Record<string, unknown>;
+	onCreated(db: Db, bugReportId: string): Promise<void>;
+};
+
 export async function createBugReport(
 	deps: { pool: pg.Pool; db: Db; boss: PgBoss; config: Config },
 	ctx: AuthContext,
 	input: CreateBugReportRequest,
 	meta: { requestId: string; idempotencyKey: string | undefined },
+	origin?: ReportOrigin,
 ) {
+	const channel = origin?.channel ?? sourceChannelOf(ctx);
 	if (input.repository_id)
 		await requireRepository(deps.db, ctx.workspaceId, input.repository_id);
 	// Blobs are content-addressed and written before the transaction; a rollback can only leave an unreferenced blob.
@@ -74,14 +87,17 @@ export async function createBugReport(
 				severity: input.severity,
 				priority: input.priority,
 			})) {
-				if (provided(value)) provenance[field] = { source: "user_provided" };
+				if (provided(value))
+					provenance[field] = {
+						source: origin?.fieldSources[field] ?? "user_provided",
+					};
 			}
 			const normalize = input.normalize ?? true;
 			await db.insert(bugReports).values({
 				id,
 				workspaceId: ctx.workspaceId,
 				repositoryId: input.repository_id ?? null,
-				sourceChannel: sourceChannelOf(ctx),
+				sourceChannel: channel,
 				title: input.title,
 				description: input.description,
 				expectedBehavior: input.expected_behavior || null,
@@ -108,14 +124,16 @@ export async function createBugReport(
 					mimeType: "text/plain; charset=utf-8",
 					sizeBytes: blob.size,
 					provenance: {
-						channel: sourceChannelOf(ctx),
+						channel,
 						captured_by_user_id: ctx.userId,
+						...origin?.evidenceProvenance,
 					},
 					retentionUntil: new Date(
 						Date.now() + EVIDENCE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
 					),
 				});
 			}
+			await origin?.onCreated(db, id);
 			await audit(db, {
 				workspaceId: ctx.workspaceId,
 				actor,
@@ -123,7 +141,7 @@ export async function createBugReport(
 				targetType: "bug_report",
 				targetId: id,
 				metadata: {
-					source_channel: sourceChannelOf(ctx),
+					source_channel: channel,
 					evidence_count: blobs.length,
 					normalize,
 				},

@@ -1,0 +1,119 @@
+{
+	"_note": "Synthetic responses shaped like the Google Meet REST API v2 reference (checked 2026-10-25). No real account was called; names and IDs are fictional.",
+	"token": {
+		"access_token": "ya29.synthetic-access-token",
+		"expires_in": 3599,
+		"refresh_token": "1//synthetic-refresh-token",
+		"scope": "https://www.googleapis.com/auth/meetings.space.readonly",
+		"token_type": "Bearer"
+	},
+	"refreshed": {
+		"access_token": "ya29.synthetic-access-token-2",
+		"expires_in": 3599,
+		"scope": "https://www.googleapis.com/auth/meetings.space.readonly",
+		"token_type": "Bearer"
+	},
+	"conferenceRecords": {
+		"conferenceRecords": [
+			{
+				"name": "conferenceRecords/abc-123",
+				"startTime": "2026-10-20T14:00:00.123456789Z",
+				"endTime": "2026-10-20T14:09:12Z",
+				"expireTime": "2026-11-19T14:09:12Z",
+				"space": "spaces/space-1"
+			},
+			{
+				"name": "conferenceRecords/def-456",
+				"startTime": "2026-10-21T09:00:00Z",
+				"space": "spaces/space-2"
+			}
+		]
+	},
+	"transcripts:abc-123": {
+		"transcripts": [
+			{
+				"name": "conferenceRecords/abc-123/transcripts/tr-1",
+				"state": "FILE_GENERATED",
+				"startTime": "2026-10-20T14:00:05Z",
+				"endTime": "2026-10-20T14:09:10Z",
+				"docsDestination": {
+					"document": "doc-1",
+					"exportUri": "https://docs.google.com/document/d/doc-1"
+				}
+			}
+		]
+	},
+	"transcripts:def-456": {
+		"transcripts": [
+			{
+				"name": "conferenceRecords/def-456/transcripts/tr-2",
+				"state": "STARTED",
+				"startTime": "2026-10-21T09:00:10Z"
+			}
+		]
+	},
+	"transcript:tr-1": {
+		"name": "conferenceRecords/abc-123/transcripts/tr-1",
+		"state": "FILE_GENERATED",
+		"startTime": "2026-10-20T14:00:05Z",
+		"endTime": "2026-10-20T14:09:10Z"
+	},
+	"entries:page1": {
+		"transcriptEntries": [
+			{
+				"name": "conferenceRecords/abc-123/transcripts/tr-1/entries/e1",
+				"participant": "conferenceRecords/abc-123/participants/p1",
+				"text": "Thanks for joining the triage call.",
+				"languageCode": "en-US",
+				"startTime": "2026-10-20T14:00:06.500000000Z",
+				"endTime": "2026-10-20T14:00:09Z"
+			},
+			{
+				"name": "conferenceRecords/abc-123/transcripts/tr-1/entries/e2",
+				"participant": "conferenceRecords/abc-123/participants/p2",
+				"text": "The order summary card overflows on small phones and the checkout button is cut off.",
+				"languageCode": "en-US",
+				"startTime": "2026-10-20T14:00:10Z",
+				"endTime": "2026-10-20T14:00:16.250Z"
+			}
+		],
+		"nextPageToken": "page-2"
+	},
+	"entries:page2": {
+		"transcriptEntries": [
+			{
+				"name": "conferenceRecords/abc-123/transcripts/tr-1/entries/e3",
+				"participant": "conferenceRecords/abc-123/participants/p3",
+				"text": "Dialed in late, sorry.",
+				"startTime": "2026-10-20T14:01:00Z",
+				"endTime": "2026-10-20T14:01:02Z"
+			},
+			{
+				"name": "conferenceRecords/abc-123/transcripts/tr-1/entries/e4",
+				"participant": "conferenceRecords/abc-123/participants/p9",
+				"text": "It is still cut off after the last deploy.",
+				"startTime": "2026-10-20T14:02:00Z",
+				"endTime": "2026-10-20T14:02:04Z"
+			}
+		]
+	},
+	"participants": {
+		"participants": [
+			{
+				"name": "conferenceRecords/abc-123/participants/p1",
+				"earliestStartTime": "2026-10-20T14:00:00Z",
+				"signedinUser": { "user": "users/111", "displayName": "Priya Sharma" }
+			},
+			{
+				"name": "conferenceRecords/abc-123/participants/p2",
+				"earliestStartTime": "2026-10-20T14:00:01Z",
+				"anonymousUser": { "displayName": "Dana Cruz" }
+			},
+			{
+				"name": "conferenceRecords/abc-123/participants/p3",
+				"earliestStartTime": "2026-10-20T14:00:55Z",
+				"phoneUser": { "displayName": "+1 555-0100" }
+			}
+		]
+	}
+}

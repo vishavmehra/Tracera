@@ -1,0 +1,3 @@
+Notes from the release sync
+The login page spinner never stops when the password is wrong.
+Search results are duplicated after paging back.

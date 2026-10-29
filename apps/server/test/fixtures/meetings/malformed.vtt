@@ -1,0 +1,16 @@
+WEBVTT
+
+1
+00:00:01.000 --> 00:00:03.000
+<v Sam>First cue is fine.</v>
+
+2
+00:00:xx.000 --> 00:00:05.000
+<v Sam>This cue has a broken timing line.</v>
+
+3
+<v Sam>No timing at all.</v>
+
+4
+00:00:09.000 --> 00:00:08.000
+<v Sam>Ends before it starts.</v>

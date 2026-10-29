@@ -1,0 +1,28 @@
+WEBVTT
+
+NOTE Synthetic Teams-style transcript for Tracera tests. Speakers and content are fictional.
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/1-0
+00:00:01.000 --> 00:00:04.200
+<v Priya Sharma>Morning everyone, quick standup today.</v>
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/2-0
+00:00:04.900 --> 00:00:11.350
+<v Alex Kim>I tested the cart this morning. When I add two items and apply the SAVE10 coupon, the total shows NaN instead of the discounted price.</v>
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/3-0
+00:00:11.800 --> 00:00:15.000
+<v Priya Sharma>Does it happen without the coupon?</v>
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/4-0
+00:00:15.400 --> 00:00:21.050
+<v Alex Kim>No, without the coupon the total is correct. It only breaks after the coupon is applied, on Chrome and Firefox.</v>
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/5-0
+00:00:21.500 --> 00:00:27.900
+<v Jordan Lee>Separate thing: customers keep asking for a dark mode on the dashboard. Could we plan that &amp; size it?</v>
+
+5f2c0a51-1d7e-4b8a-9a43-0c6a2b1e7f10/6-0
+00:00:28.300 --> 00:00:31.000
+<v Priya Sharma>Sure, let's discuss it on Thursday.
+And how was everyone's weekend?</v>

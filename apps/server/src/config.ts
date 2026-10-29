@@ -219,6 +219,7 @@ export type Config = {
 		keep: number;
 		egressNetwork: string;
 	};
+	meetings: MeetingsConfig;
 };
 
 export function loadConfig(
@@ -307,6 +308,7 @@ export function loadConfig(
 			keep: e.TRACERA_DEPS_KEEP,
 			egressNetwork: e.TRACERA_DEPS_EGRESS_NETWORK,
 		},
+		meetings: loadMeetingsConfig(env, reasoningModel),
 	};
 }
 
@@ -333,3 +335,94 @@ export function describeConfig(config: Config) {
 		dependencyRegistry: new URL(config.dependencies.registry).origin,
 	};
 }
+
+// ---- Meetings and integrations ----
+
+const MeetingEnvSchema = z.object({
+	TRACERA_MODEL_MEETING: opt(z.string().max(200).optional()),
+	TRACERA_ENCRYPTION_KEY: opt(z.string().optional()),
+	GOOGLE_CLIENT_ID: opt(z.string().max(300).optional()),
+	GOOGLE_CLIENT_SECRET: opt(z.string().max(500).optional()),
+	GOOGLE_REDIRECT_URI: opt(z.url({ protocol: /^https?$/ }).optional()),
+});
+
+export const GOOGLE_CALLBACK_PATH = "/api/v1/integrations/google/callback";
+
+export type MeetingsConfig = {
+	/** Model for extract_meeting_bugs: TRACERA_MODEL_MEETING, else TRACERA_MODEL_REASONING. */
+	model: string;
+	/** AES-256-GCM key for OAuth tokens at rest; null when unset. */
+	encryptionKey: Buffer | null;
+	/** Set only when every Google variable and the encryption key are present. */
+	google: {
+		clientId: string;
+		clientSecret: string;
+		redirectUri: string;
+	} | null;
+	/** Names of the variables the Google integration still needs (never their values). */
+	googleMissing: string[];
+};
+
+/** A partly configured integration is reported as not configured; malformed values fail startup. */
+function loadMeetingsConfig(
+	env: Record<string, string | undefined>,
+	reasoningModel: string,
+): MeetingsConfig {
+	const parsed = MeetingEnvSchema.safeParse(env);
+	const invalid = (path: string, message: string) =>
+		new ConfigError(
+			`Invalid configuration:\n- ${path}: ${message}\nSee .env.example.`,
+		);
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0];
+		throw invalid(
+			String(issue?.path[0] ?? "(root)"),
+			issue?.message ?? "invalid",
+		);
+	}
+	const e = parsed.data;
+	let encryptionKey: Buffer | null = null;
+	if (e.TRACERA_ENCRYPTION_KEY) {
+		const value = e.TRACERA_ENCRYPTION_KEY.trim();
+		encryptionKey = Buffer.from(value, "base64");
+		if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || encryptionKey.length !== 32)
+			throw invalid(
+				"TRACERA_ENCRYPTION_KEY",
+				"must be 32 random bytes encoded as base64",
+			);
+	}
+	if (
+		e.GOOGLE_REDIRECT_URI &&
+		new URL(e.GOOGLE_REDIRECT_URI).pathname !== GOOGLE_CALLBACK_PATH
+	)
+		throw invalid(
+			"GOOGLE_REDIRECT_URI",
+			`must end with ${GOOGLE_CALLBACK_PATH}`,
+		);
+	const missing = (
+		[
+			"GOOGLE_CLIENT_ID",
+			"GOOGLE_CLIENT_SECRET",
+			"GOOGLE_REDIRECT_URI",
+			"TRACERA_ENCRYPTION_KEY",
+		] as const
+	).filter((name) => !e[name]);
+	return {
+		model: e.TRACERA_MODEL_MEETING ?? reasoningModel,
+		encryptionKey,
+		google:
+			e.GOOGLE_CLIENT_ID &&
+			e.GOOGLE_CLIENT_SECRET &&
+			e.GOOGLE_REDIRECT_URI &&
+			encryptionKey
+				? {
+						clientId: e.GOOGLE_CLIENT_ID,
+						clientSecret: e.GOOGLE_CLIENT_SECRET,
+						redirectUri: e.GOOGLE_REDIRECT_URI,
+					}
+				: null,
+		googleMissing: missing,
+	};
+}
+
+// ---- end of the meetings section ----

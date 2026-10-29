@@ -23,6 +23,11 @@ export const ID_PREFIXES = [
 	"asm",
 	"pia",
 	"dep",
+	// Meetings: sessions, transcript segments, bug candidates, integration connections.
+	"mtg",
+	"seg",
+	"cand",
+	"int",
 ] as const;
 export type IdPrefix = (typeof ID_PREFIXES)[number];
 

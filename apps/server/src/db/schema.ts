@@ -1068,3 +1068,201 @@ export const idempotencyKeys = pgTable(
 	},
 	(t) => [primaryKey({ columns: [t.workspaceId, t.actorId, t.key] })],
 );
+
+// ---- Meetings ---------------------------------------------------------------------------------
+// Tables only. Transcript bytes stay in the blob store.
+
+type TranscriptInfoJson = import("@tracera/contracts").TranscriptInfo;
+type MeetingExtractionJson = import("@tracera/contracts").MeetingExtractionInfo;
+export type CandidateCitationRecord = {
+	segment_id: string;
+	index: number;
+	/** The model's quote, checked against the segment; null when a person chose the segment. */
+	quote: string | null;
+};
+export type CandidateSupportRecord = {
+	status: "supported" | "partially_supported" | "unsupported";
+	citations_valid: number;
+	citations_dropped: number;
+	reasons: string[];
+};
+export type DuplicateRecord = {
+	type: "candidate" | "bug_report";
+	id: string;
+	title: string;
+	similarity: number;
+};
+export type ReviewRecord = {
+	decided_by: string;
+	decided_at: string;
+	reason: string | null;
+};
+
+export const meetingProvider = pgEnum("meeting_provider", [
+	"teams",
+	"google_meet",
+	"other",
+]);
+export const meetingSource = pgEnum("meeting_source", [
+	"upload_transcript",
+	"provider_api",
+]);
+export const meetingStatus = pgEnum("meeting_status", [
+	"transcribed",
+	"processing",
+	"extracted",
+	"reviewed",
+	"failed",
+]);
+export const meetingCandidateKind = pgEnum("meeting_candidate_kind", [
+	"bug",
+	"feature_request",
+	"question",
+	"other",
+]);
+export const meetingCandidateStatus = pgEnum("meeting_candidate_status", [
+	"pending_review",
+	"confirmed",
+	"dismissed",
+	"rejected",
+]);
+export const integrationProvider = pgEnum("integration_provider", ["google"]);
+export const integrationStatus = pgEnum("integration_status", [
+	"active",
+	"expired",
+	"revoked",
+	"error",
+]);
+
+/** One user's OAuth connection to a meeting provider. Tokens are sealed with TRACERA_ENCRYPTION_KEY. */
+export const integrationConnections = pgTable(
+	"integration_connections",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		userId: text()
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		provider: integrationProvider().notNull(),
+		status: integrationStatus().notNull(),
+		scopes: text().array().notNull(),
+		accessTokenSealed: text().notNull(),
+		refreshTokenSealed: text(),
+		accessTokenExpiresAt: ts(),
+		lastError: jsonb().$type<ErrorInfo>(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [uniqueIndex().on(t.workspaceId, t.userId, t.provider)],
+);
+
+/** An uploaded or imported transcript; the original bytes are the blob `blob_sha256`. */
+export const meetingSessions = pgTable(
+	"meeting_sessions",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		provider: meetingProvider().notNull(),
+		source: meetingSource().notNull(),
+		status: meetingStatus().notNull(),
+		title: text(),
+		occurredAt: ts(),
+		repositoryId: text().references(() => repositories.id, {
+			onDelete: "set null",
+		}),
+		providerRef: text(),
+		integrationConnectionId: text().references(
+			() => integrationConnections.id,
+			{ onDelete: "set null" },
+		),
+		blobSha256: text().notNull(),
+		transcript: jsonb().$type<TranscriptInfoJson>().notNull(),
+		speakerMap: jsonb().$type<Record<string, string>>().notNull().default({}),
+		flags: text().array().notNull().default(emptyTextArray),
+		extraction: jsonb().$type<MeetingExtractionJson>(),
+		extractionStartedAt: ts(),
+		failure: jsonb().$type<ErrorInfo>(),
+		consentStatement: text().notNull(),
+		consentAttestedAt: ts().notNull(),
+		createdBy: text()
+			.notNull()
+			.references(() => users.id),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index().on(t.workspaceId, t.createdAt.desc(), t.id.desc()),
+		// A provider transcript is imported once per workspace.
+		uniqueIndex()
+			.on(t.workspaceId, t.providerRef)
+			.where(sql`${t.providerRef} is not null`),
+	],
+);
+
+export const transcriptSegments = pgTable(
+	"transcript_segments",
+	{
+		id: text().primaryKey(),
+		meetingSessionId: text()
+			.notNull()
+			.references(() => meetingSessions.id, { onDelete: "cascade" }),
+		workspaceId: text().notNull(),
+		/** 1-based position, cited as SEG-n. */
+		segmentIndex: integer().notNull(),
+		speakerLabel: text(),
+		startMs: integer(),
+		endMs: integer(),
+		text: text().notNull(),
+	},
+	(t) => [uniqueIndex().on(t.meetingSessionId, t.segmentIndex)],
+);
+
+/** A model-proposed topic from a meeting, validated by code and decided by a person. */
+export const meetingCandidates = pgTable(
+	"meeting_candidates",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		meetingSessionId: text()
+			.notNull()
+			.references(() => meetingSessions.id, { onDelete: "cascade" }),
+		ordinal: integer().notNull(),
+		kind: meetingCandidateKind().notNull(),
+		status: meetingCandidateStatus().notNull(),
+		title: text().notNull(),
+		description: text().notNull(),
+		expectedBehavior: text(),
+		actualBehavior: text(),
+		steps: jsonb().$type<string[]>().notNull().default([]),
+		severity: severity().notNull().default("unknown"),
+		affectedArea: text(),
+		citations: jsonb().$type<CandidateCitationRecord[]>().notNull(),
+		support: jsonb().$type<CandidateSupportRecord>().notNull(),
+		duplicateOf: jsonb().$type<DuplicateRecord>(),
+		fieldSources: jsonb()
+			.$type<Record<string, ValueSource>>()
+			.notNull()
+			.default({}),
+		repositoryId: text().references(() => repositories.id, {
+			onDelete: "set null",
+		}),
+		modelExecutionId: text(),
+		bugReportId: text().references(() => bugReports.id, {
+			onDelete: "set null",
+		}),
+		review: jsonb().$type<ReviewRecord>(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		uniqueIndex().on(t.meetingSessionId, t.ordinal),
+		index().on(t.workspaceId, t.kind, t.status),
+	],
+);
+// ---- end of the meetings section ----------------------------------------------------------------

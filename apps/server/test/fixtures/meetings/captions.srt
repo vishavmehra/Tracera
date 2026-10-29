@@ -1,0 +1,16 @@
+1
+00:00:01,000 --> 00:00:03,500
+Priya: Can everyone see my screen?
+
+2
+00:00:04,000 --> 00:00:09,250
+Alex: <i>Yes.</i> The export button gives an empty CSV file
+when the date filter is set.
+
+3
+00:00:09,500 --> 00:00:12,000
+Priya: Thanks, I will file it.
+
+4
+00:00:12,500 --> 00:00:16,000
+{\an8}Alex: It started after Tuesday's release.

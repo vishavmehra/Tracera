@@ -22,6 +22,7 @@ import {
 	recoverStaleSteps,
 	runInvestigationStage,
 } from "../modules/investigations.ts";
+import { registerMeetingWorker } from "../modules/meeting-extract.ts";
 import { runNormalization } from "../modules/normalization.ts";
 import {
 	recoverLostPatchAnalyses,
@@ -228,6 +229,9 @@ export async function startWorker(
 			if (job) await runDependencySnapshotJob(deps, job.data.snapshotId);
 		},
 	);
+	// ---- Meetings: transcript bug extraction (queue meeting.extract) ----
+	await registerMeetingWorker(deps);
+	// ---- end of the meetings section ----
 	const heartbeat = setInterval(() => {
 		publishHeartbeat(deps, startedAt).catch(report);
 	}, 15_000);

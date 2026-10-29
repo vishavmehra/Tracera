@@ -1,0 +1,18 @@
+Checkout triage - 2026/10/20 14:00 GMT - Transcript
+Attendees
+Alex Kim, Dana Cruz, Priya Sharma
+Transcript
+00:00:00
+
+Priya Sharma: Thanks for joining the triage call.
+Dana Cruz: The order summary card overflows on small phones. At 375 pixels wide the checkout button is cut off and you have to scroll sideways.
+Priya Sharma: Is that only on the cart page?
+Dana Cruz: Yes, only on the cart page.
+00:05:00
+
+Alex Kim: Also the dashboard average order value is half of what it should be. Yesterday it showed 12.40 but finance says 24.80.
+Dana Cruz: And the overflow on small phones I mentioned is still there after the last deploy,
+even on the newest build.
+Total: we have two bugs to file.
+Meeting ended after 00:09:12 👋
+This editable transcript was computer generated and might contain errors. People can also change the text after it was created.
