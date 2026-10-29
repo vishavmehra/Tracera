@@ -1,0 +1,21 @@
+{
+  "name": "@tracera/server",
+  "private": true,
+  "type": "module",
+  "description": "Tracera API and worker (modular monolith, two entrypoints).",
+  "dependencies": {
+    "@babel/parser": "8.0.7",
+    "@tracera/contracts": "*",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.7",
+    "pg": "8.23.1",
+    "pg-boss": "12.38.0",
+    "pino": "10.4.0",
+    "playwright-core": "1.64.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11"
+  }
+}
