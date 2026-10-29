@@ -1,0 +1,12 @@
+{
+	"name": "@tracera/contracts",
+	"private": true,
+	"type": "module",
+	"description": "Shared Zod schemas and types for every Tracera app.",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"zod": "4.6.7"
+	}
+}
