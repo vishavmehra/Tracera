@@ -1,0 +1,11 @@
+{
+  "name": "bench-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pricing, cart and dashboard metrics for a small online shop.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test"
+  }
+}

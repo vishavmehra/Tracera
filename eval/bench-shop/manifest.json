@@ -1,0 +1,192 @@
+{
+  "fixture": "bench-shop",
+  "version": 1,
+  "description": "Evaluation manifest and answer key for the Bench Shop fixture. Evaluator-owned: never copied into the materialized repository or sent to a model.",
+  "source_dir": "fixtures/bench-shop",
+  "repository": {
+    "name": "bench-shop",
+    "commands": { "install": "npm ci --ignore-scripts", "test": "npm test" }
+  },
+  "base_commits": [
+    { "message": "chore: project skeleton", "paths": ["package.json", "README.md"] },
+    { "message": "feat: pricing rules", "paths": ["src/pricing.js", "test/pricing.test.js"] },
+    { "message": "feat: cart operations", "paths": ["src/cart.js", "test/cart.test.js"] },
+    { "message": "feat: dashboard metrics", "paths": ["src/metrics.js", "test/metrics.test.js"] }
+  ],
+  "cases": [
+    {
+      "id": "B1",
+      "category": "boundary_condition",
+      "branch": "bug/free-shipping",
+      "commits": [
+        {
+          "message": "refactor: tidy shipping rule",
+          "edits": [
+            {
+              "path": "src/pricing.js",
+              "search": "\tif (subtotal >= FREE_SHIPPING_THRESHOLD_CENTS) return 0;\n\treturn STANDARD_SHIPPING_CENTS;",
+              "replace": "\treturn subtotal > FREE_SHIPPING_THRESHOLD_CENTS\n\t\t? 0\n\t\t: STANDARD_SHIPPING_CENTS;"
+            }
+          ]
+        }
+      ],
+      "report": {
+        "title": "Free shipping is not applied to a $50.00 order",
+        "description": "The shop promises free shipping on orders of $50 or more. A customer bought two items at $25.00 each (subtotal exactly $50.00) and checkout still charged $4.99 shipping. Orders of $60 ship free as expected.",
+        "expected_behavior": "Shipping is $0.00 when the subtotal is $50.00 or more",
+        "actual_behavior": "A $50.00 subtotal is charged $4.99 shipping",
+        "steps": [
+          "Add two items priced $25.00 each to the cart",
+          "Go to checkout",
+          "Read the shipping line of the order total"
+        ]
+      },
+      "initial_reproduction": "shippingCents(5000) returns 499 instead of 0",
+      "expected_behavior": "Subtotals of 5000 cents or more ship free; 4999 cents pays 499",
+      "gold": { "path": "src/pricing.js", "marker": "subtotal > FREE_SHIPPING_THRESHOLD_CENTS" },
+      "expected_baseline": ["reproduced"],
+      "hidden_tests": ["eval/bench-shop/hidden/b1-free-shipping.test.js"],
+      "test_commands": { "visible": "npm test", "hidden": "node --test eval-hidden/b1-free-shipping.test.js" },
+      "success_criteria": [
+        "Collected context includes src/pricing.js",
+        "Top-3 hypotheses include a location within 10 lines of the gold marker",
+        "Baseline reproduction is reproduced",
+        "Hidden tests pass on the proposed patch",
+        "Post-patch reproduction passes twice and the visible suite has no newly failing tests",
+        "The report copies the stored reproduction and verification statuses"
+      ]
+    },
+    {
+      "id": "B2",
+      "category": "state_handling",
+      "branch": "bug/cart-remove",
+      "commits": [
+        {
+          "message": "refactor: simplify removeItem",
+          "edits": [
+            {
+              "path": "src/cart.js",
+              "search": "\tif (index !== -1) cart.lines.splice(index, 1);",
+              "replace": "\tcart.lines.splice(index, 1);"
+            }
+          ]
+        },
+        {
+          "message": "chore: declare supported Node.js version",
+          "edits": [
+            {
+              "path": "package.json",
+              "search": "  \"license\": \"MIT\",\n",
+              "replace": "  \"license\": \"MIT\",\n  \"engines\": {\n    \"node\": \">=24\"\n  },\n"
+            }
+          ]
+        }
+      ],
+      "report": {
+        "title": "Removing an item twice deletes another item from the cart",
+        "description": "My cart had Blue Mug, Amber Lamp and Green Tea, in that order. I double-clicked Remove next to Amber Lamp. Amber Lamp was removed, but Green Tea disappeared as well, so only Blue Mug was left.",
+        "expected_behavior": "Removing an item that is already gone changes nothing; Blue Mug and Green Tea stay in the cart",
+        "actual_behavior": "Green Tea is removed too",
+        "steps": [
+          "Add Blue Mug, Amber Lamp and Green Tea to the cart",
+          "Double-click Remove next to Amber Lamp",
+          "Look at the cart contents"
+        ]
+      },
+      "initial_reproduction": "removeItem(cart, sku) called twice for the same SKU removes the last line on the second call",
+      "expected_behavior": "Removing a SKU that is not in the cart is a no-op",
+      "gold": { "path": "src/cart.js", "marker": "cart.lines.splice(index, 1);" },
+      "expected_baseline": ["reproduced"],
+      "hidden_tests": ["eval/bench-shop/hidden/b2-remove-item.test.js"],
+      "test_commands": { "visible": "npm test", "hidden": "node --test eval-hidden/b2-remove-item.test.js" },
+      "success_criteria": [
+        "Collected context includes src/cart.js",
+        "Top-3 hypotheses include a location within 10 lines of the gold marker",
+        "Baseline reproduction is reproduced",
+        "Hidden tests pass on the proposed patch",
+        "Post-patch reproduction passes twice and the visible suite has no newly failing tests",
+        "The report copies the stored reproduction and verification statuses"
+      ]
+    },
+    {
+      "id": "B3",
+      "category": "data_transformation",
+      "branch": "bug/dashboard-aov",
+      "commits": [
+        {
+          "message": "refactor: simplify average order value",
+          "edits": [
+            {
+              "path": "src/metrics.js",
+              "search": "\tif (orders.length === 0) return 0;\n\treturn Math.round(revenueCents(orders) / orders.length);",
+              "replace": "\tconst count = lineItemCount(orders);\n\treturn count === 0 ? 0 : Math.round(revenueCents(orders) / count);"
+            }
+          ]
+        },
+        {
+          "message": "docs: describe dashboard metrics",
+          "edits": [
+            {
+              "path": "README.md",
+              "search": "- `src/metrics.js`: sales dashboard metrics.\n",
+              "replace": "- `src/metrics.js`: sales dashboard metrics (orders, line items, revenue, average order value).\n"
+            }
+          ]
+        }
+      ],
+      "report": {
+        "title": "Dashboard average order value is wrong",
+        "description": "The sales dashboard says the average order value is $12.40. We had two orders today totaling $49.60, so the average should be $24.80. It started after yesterday's update.",
+        "expected_behavior": "Average order value is $24.80 for two orders totaling $49.60",
+        "actual_behavior": "Average order value shows $12.40",
+        "steps": [
+          "Place two orders totaling $49.60 (four items in total)",
+          "Open the sales dashboard",
+          "Read the Average order value card"
+        ]
+      },
+      "initial_reproduction": "averageOrderValueCents of two orders with four lines totaling 4960 returns 1240",
+      "expected_behavior": "Average order value divides revenue by the number of orders",
+      "gold": { "path": "src/metrics.js", "marker": "revenueCents(orders) / count" },
+      "expected_baseline": ["reproduced"],
+      "hidden_tests": ["eval/bench-shop/hidden/b3-average-order-value.test.js"],
+      "test_commands": { "visible": "npm test", "hidden": "node --test eval-hidden/b3-average-order-value.test.js" },
+      "success_criteria": [
+        "Collected context includes src/metrics.js and the commit that changed it",
+        "Top-3 hypotheses include a location within 10 lines of the gold marker",
+        "Baseline reproduction is reproduced",
+        "Hidden tests pass on the proposed patch",
+        "Post-patch reproduction passes twice and the visible suite has no newly failing tests",
+        "The report copies the stored reproduction and verification statuses"
+      ]
+    },
+    {
+      "id": "N1",
+      "category": "negative_not_reproducible",
+      "branch": "main",
+      "commits": [],
+      "report": {
+        "title": "Sales tax is calculated on shipping",
+        "description": "For a $40.00 order with $4.99 shipping, the tax line showed $3.60. Tax should only apply to the $40.00 of merchandise, which would be $3.20 at our 8% rate.",
+        "expected_behavior": "Tax on a $40.00 order is $3.20",
+        "actual_behavior": "Tax shows $3.60, as if shipping were taxed",
+        "steps": [
+          "Add items totaling $40.00 to the cart",
+          "Go to checkout",
+          "Compare the tax line with 8% of the subtotal"
+        ]
+      },
+      "initial_reproduction": "Not reproducible: taxCents(4000) returns 320 and orderTotal taxes merchandise only",
+      "expected_behavior": "No code change is needed",
+      "gold": null,
+      "expected_baseline": ["not_reproduced", "inconclusive", "blocked", "not_attempted"],
+      "hidden_tests": [],
+      "test_commands": { "visible": "npm test", "hidden": null },
+      "success_criteria": [
+        "Baseline reproduction is never reported as reproduced",
+        "The verification outcome is never verified",
+        "The report states that the reported behavior was not reproduced"
+      ]
+    }
+  ]
+}
