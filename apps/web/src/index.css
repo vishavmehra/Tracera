@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/*
+ * Tracera's design tokens. The official palette is the source of truth; every
+ * other color is derived from it or is a semantic status color. Components use the Tailwind utilities
+ * mapped below (bg-surface, text-ink-2, border-line, bg-primary, text-success, ...), never raw hex.
+ *
+ * Roles: the darkest colors are the canvas; the blues are structure (the shell, rules, the workflow
+ * rail, graph lines, hover and selected rows); orchid pink marks the current or selected thing and
+ * keyboard focus; deep magenta is the one primary action on a screen.
+ *
+ * Meaning is not decoration: green only means passed or verified; amber is attention; red is failure
+ * or blocking; violet marks uncertain or unsupported content; blue is information and work in flight.
+ */
+:root {
+	color-scheme: dark;
+
+	/* Official brand palette */
+	--brand-pink: #c46ea1;
+	--brand-magenta: #9c2968;
+	--brand-plum: #5b1343;
+	--midnight-black: #00050d;
+	--midnight-indigo: #18203c;
+	--deep-ocean: #133c5a;
+	--steel-blue: #22587f;
+
+	/* Application surfaces. Most content sits on the canvas; --surface is the plane for documents
+	   (code, diffs, logs, forms), --surface-elevated for the shell and menus. */
+	--background: #00050d;
+	--sidebar: #18203c;
+	--surface: #0a1121;
+	--surface-elevated: #18203c;
+	--surface-interactive: #133c5a;
+	--border: #1e2943;
+	--border-strong: #34476a;
+
+	/* The workflow rail and graph lines: steel blue, with a lighter step for completed nodes. */
+	--trace: #22587f;
+	--trace-done: #5d93c2;
+
+	/* Typography (on --background: primary 18:1, secondary 11:1, muted 6.6:1) */
+	--text-primary: #f2f0f5;
+	--text-secondary: #b7c0d1;
+	--text-muted: #8996ad;
+
+	/* Brand interactions. The hover is a step toward orchid pink: white text keeps 5.6:1 on it, where it
+	   would drop to 3.4:1 on #C46EA1 itself. */
+	--primary: var(--brand-magenta);
+	--primary-hover: #b03a7b;
+	--primary-foreground: #ffffff;
+	--accent: var(--brand-pink);
+	--link: #6fa8d6;
+	--focus-ring: var(--brand-pink);
+
+	/* Semantic status colors: system meaning only */
+	--success: #4ade80;
+	--warning: #fbbf24;
+	--error: #f87171;
+	--info: #60a5fa;
+	--uncertain: #a78bfa;
+
+	/* Diffs: tinted backgrounds with light text */
+	--diff-add-bg: rgb(74 222 128 / 0.12);
+	--diff-add-fg: #c6f6d5;
+	--diff-del-bg: rgb(248 113 113 / 0.13);
+	--diff-del-fg: #fecaca;
+}
+
+/* IBM Plex, self-hosted (main.tsx): an engineering face whose mono tells 0/O and 1/l apart in SHAs,
+   handles, and paths. Mono is for code and identifiers only, never for labels. */
+@theme {
+	--font-sans:
+		"IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+	--font-mono:
+		"IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+	/* The one ambient motion: a stage or job the worker is running right now. */
+	--animate-live: live 1.8s ease-in-out infinite;
+	@keyframes live {
+		0%,
+		100% {
+			box-shadow: 0 0 0 0 rgb(96 165 250 / 0.55);
+		}
+		60% {
+			box-shadow: 0 0 0 5px rgb(96 165 250 / 0);
+		}
+	}
+}
+
+@theme inline {
+	--color-canvas: var(--background);
+	--color-sidebar: var(--sidebar);
+	--color-surface: var(--surface);
+	--color-elevated: var(--surface-elevated);
+	--color-interactive: var(--surface-interactive);
+	--color-line: var(--border);
+	--color-line-strong: var(--border-strong);
+	--color-trace: var(--trace);
+	--color-trace-done: var(--trace-done);
+	--color-ink: var(--text-primary);
+	--color-ink-2: var(--text-secondary);
+	--color-ink-3: var(--text-muted);
+	--color-primary: var(--primary);
+	--color-primary-hover: var(--primary-hover);
+	--color-on-primary: var(--primary-foreground);
+	--color-accent: var(--accent);
+	--color-plum: var(--brand-plum);
+	--color-ocean: var(--deep-ocean);
+	--color-steel: var(--steel-blue);
+	--color-link: var(--link);
+	--color-success: var(--success);
+	--color-warning: var(--warning);
+	--color-error: var(--error);
+	--color-info: var(--info);
+	--color-uncertain: var(--uncertain);
+	--color-diff-add: var(--diff-add-bg);
+	--color-diff-add-fg: var(--diff-add-fg);
+	--color-diff-del: var(--diff-del-bg);
+	--color-diff-del-fg: var(--diff-del-fg);
+}
+
+/* In the base layer so utilities (for example outline-none on <main>) can override it. */
+@layer base {
+	/* In-page links (evidence citations) land below the sticky shell. */
+	html {
+		scroll-padding-top: 4.5rem;
+	}
+
+	body {
+		background-color: var(--background);
+		color: var(--text-primary);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	/* One visible focus style for every focusable element (orchid pink, 5.8:1 on the canvas). */
+	:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
+
+	::selection {
+		background-color: var(--brand-plum);
+		color: var(--text-primary);
+	}
+
+	::placeholder {
+		color: var(--text-muted);
+	}
+
+	/* Disclosures draw their own chevron. */
+	summary {
+		list-style: none;
+	}
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	code,
+	kbd,
+	samp,
+	pre {
+		font-family: var(--font-mono);
+	}
+}
