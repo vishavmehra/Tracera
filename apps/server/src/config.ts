@@ -145,6 +145,8 @@ const EnvSchema = z
 				.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/)
 				.default("bridge"),
 		),
+		/** Behind a reverse proxy the client address is only in X-Forwarded-For; without it every login is throttled as one address. */
+		TRACERA_TRUST_PROXY: bool(false),
 	})
 	.superRefine((env, ctx) => {
 		const require = (key: keyof typeof env, reason: string) => {
@@ -184,7 +186,13 @@ export type InferenceProviderKind = "mock" | "openai_compatible" | "meta";
 export type Config = {
 	env: "development" | "test" | "production";
 	logLevel: string;
-	api: { host: string; port: number; publicUrl: string; publicOrigin: string };
+	api: {
+		host: string;
+		port: number;
+		publicUrl: string;
+		publicOrigin: string;
+		trustProxy: boolean;
+	};
 	databaseUrl: string;
 	autoMigrate: boolean;
 	dataDir: string;
@@ -251,6 +259,7 @@ export function loadConfig(
 			port: e.TRACERA_API_PORT,
 			publicUrl: e.TRACERA_PUBLIC_URL,
 			publicOrigin: new URL(e.TRACERA_PUBLIC_URL).origin,
+			trustProxy: e.TRACERA_TRUST_PROXY,
 		},
 		databaseUrl: e.DATABASE_URL,
 		autoMigrate: e.TRACERA_AUTO_MIGRATE,

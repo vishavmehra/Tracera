@@ -1,0 +1,32 @@
+.git
+.github
+.claude
+.vscode
+.idea
+
+# Secrets and local configuration never enter the build context.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+
+# Local data and evaluation output. The hidden benchmark tests and the results are never shipped.
+.tracera
+.tracera-data
+eval/results
+eval/bench-shop/hidden
+
+# Not part of the API image.
+docs
+apps/web
+apps/extension
+apps/mcp
+apps/*/test
+packages/*/test

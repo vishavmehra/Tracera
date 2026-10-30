@@ -177,7 +177,20 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 
 ## Deployment
 
-Not configured yet. Tracera runs locally with the steps above; there is no container image for the API or web app, no CI pipeline, and no hosted environment.
+The repository contains what is needed to host Tracera as well as the local setup above:
+
+- `Dockerfile` builds one image that runs the API and the worker together (`scripts/start.ts`), because both use the same data directory. It waits for the database, starts the API (which applies migrations) and then the worker, can create the first owner from `TRACERA_SEED_OWNER_EMAIL` and `TRACERA_SEED_OWNER_PASSWORD`, and can build the Bench Shop demo repository (`TRACERA_DEMO_REPOS=true`) when it is missing.
+- `render.yaml` is a Render Blueprint for that image on free plans: one web service, which has no disk (its data directory is temporary) and sleeps after 15 minutes without traffic, plus its own Postgres, which expires after 30 days. A paid instance with a disk is the upgrade path. The container has no Docker, so `TRACERA_SANDBOX_MODE=disabled`: investigations run analysis only and the sandbox stages are recorded as blocked.
+- `vercel.json` builds the web app and proxies `/api/*`, `/healthz`, and `/readyz` to the API, so the browser sees a single origin. Cookies, the CSRF check, and OAuth callbacks depend on that; set `TRACERA_PUBLIC_URL` to the web app's origin and `TRACERA_TRUST_PROXY=true` behind the proxy.
+
+On the free plans the service needs about 40 to 50 seconds to answer after it wakes from idle, and signing in takes several seconds on the free CPU.
+
+What works where:
+
+- **Hosted and local:** the web app, the REST API and worker, meeting upload, the Chrome extension and the MCP server (each talks to whichever API origin it is configured with), and investigations that stop before the sandbox.
+- **Local only:** sandboxed reproduction and verification, which need Docker, and applying, committing, and pushing patches, which act on local-path repositories on the machine that runs the API.
+
+`.env.example` lists the variables. There is no CI pipeline.
 
 ## License
 

@@ -1,0 +1,94 @@
+# Render Blueprint: one web service that runs the API and the worker together, plus its own Postgres.
+# The web app is a separate static deployment whose rewrites proxy /api/*, /healthz and /readyz to this
+# service, so the browser sees a single origin.
+#
+# Everything here runs on free plans. The web service has no disk, so the data directory is rebuilt on
+# every boot. It sleeps after 15 minutes without traffic and wakes on the next request, and the worker
+# only makes progress while it is awake. A free database expires after 30 days.
+databases:
+  - name: tracera-db
+    # Free. A paid instance is the upgrade path.
+    plan: free
+    region: singapore
+    postgresMajorVersion: "17"
+    databaseName: tracera
+    user: tracera
+    # Only services on the private network can connect.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: tracera-api
+    runtime: docker
+    # Free. A paid instance with a disk is the upgrade path: raise the plan, mount a disk, and point
+    # TRACERA_DATA_DIR and TRACERA_REPO_ROOTS into it.
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRACERA_API_HOST
+        value: "0.0.0.0"
+      - key: TRACERA_API_PORT
+        value: "10000"
+      - key: PORT
+        value: "10000"
+      - key: TRACERA_AUTO_MIGRATE
+        value: "true"
+      - key: TRACERA_INFERENCE_PROVIDER
+        value: meta
+      - key: TRACERA_MODEL_REASONING
+        value: muse-spark-1.3
+      # The container cannot run the Docker sandbox: investigations are analysis only and verification
+      # is reported as blocked.
+      - key: TRACERA_SANDBOX_MODE
+        value: disabled
+      - key: TRACERA_LLM_DAILY_BUDGET_USD
+        value: "5"
+      # Requests arrive through the web deployment's proxy and Render's; without this every login
+      # is throttled as one address.
+      - key: TRACERA_TRUST_PROXY
+        value: "true"
+      # Temporary storage: gone whenever the instance sleeps, restarts or redeploys.
+      - key: TRACERA_DATA_DIR
+        value: /tmp/tracera
+      - key: TRACERA_REPO_ROOTS
+        value: /tmp/repos
+      # Builds the Bench Shop fixture on every boot (when missing) so it can be registered from the
+      # web app.
+      - key: TRACERA_DEMO_REPOS
+        value: "true"
+      # Password hashing takes 128 MiB per login and runs on this thread pool. Two at a time keep
+      # a 512 MB instance alive under concurrent logins; raise it together with the plan.
+      - key: UV_THREADPOOL_SIZE
+        value: "2"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tracera-db
+          property: connectionString
+      # Secrets and per-deployment values. Render asks for them when the Blueprint is first created;
+      # later changes are made on the service's Environment page.
+      - key: TRACERA_META_API_KEY
+        sync: false
+      # The origin the browser uses, that is the web deployment's, not this service's own.
+      # It is compared with the Origin header of every cookie-authenticated change.
+      - key: TRACERA_PUBLIC_URL
+        sync: false
+      # The database starts empty, so the first owner is created from these on boot. An existing
+      # account is never modified.
+      - key: TRACERA_SEED_OWNER_EMAIL
+        sync: false
+      - key: TRACERA_SEED_OWNER_PASSWORD
+        sync: false
+      - key: TRACERA_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # The web origin followed by the callback path, because the proxy forwards it to this service.
+      - key: GOOGLE_REDIRECT_URI
+        sync: false

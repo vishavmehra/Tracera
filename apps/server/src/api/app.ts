@@ -37,6 +37,7 @@ export function authOf(request: FastifyRequest): AuthContext {
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 	const { config } = deps;
 	const app = Fastify({
+		trustProxy: config.api.trustProxy,
 		logger:
 			config.logLevel === "silent"
 				? false

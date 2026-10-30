@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.ts",
+    "start": "node --env-file-if-exists=.env scripts/start.ts",
     "dev:api": "node --env-file-if-exists=.env --watch apps/server/src/main-api.ts",
     "dev:worker": "node --env-file-if-exists=.env --watch apps/server/src/main-worker.ts",
     "dev:web": "npm run dev --workspace @tracera/web",

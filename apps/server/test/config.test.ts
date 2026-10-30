@@ -73,6 +73,23 @@ describe("loadConfig", () => {
 		expect(config.repoRoots).toEqual(["D:/repos", "C:/work/code"]);
 	});
 
+	it("trusts forwarded client addresses only when asked", () => {
+		expect(loadConfig(base).api.trustProxy).toBe(false);
+		expect(
+			loadConfig({ ...base, TRACERA_TRUST_PROXY: "true" }).api.trustProxy,
+		).toBe(true);
+		expect(() => loadConfig({ ...base, TRACERA_TRUST_PROXY: "yes" })).toThrow(
+			/TRACERA_TRUST_PROXY/,
+		);
+	});
+
+	it("accepts a plain Postgres URL without TLS parameters", () => {
+		const config = loadConfig({
+			DATABASE_URL: "postgresql://tracera:pw@dpg-d0abc123-a/tracera",
+		});
+		expect(new URL(config.databaseUrl).host).toBe("dpg-d0abc123-a");
+	});
+
 	it("rejects an unknown provider", () => {
 		expect(() =>
 			loadConfig({ ...base, TRACERA_INFERENCE_PROVIDER: "llama" }),

@@ -1,6 +1,7 @@
 // Materializes the Bench Shop fixture as a git repository under TRACERA_DATA_DIR/fixtures/bench-shop.
 // Reset procedure: re-run `npm run bench:setup`; it deletes and rebuilds the repository with identical,
 // deterministic commits (fixed author, committer, and dates). The answer key stays in eval/bench-shop.
+// With --if-absent an existing repository is left untouched (the production start script uses this).
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
@@ -140,10 +141,20 @@ export function setupBenchShop(dataDir: string): {
 
 if (import.meta.main) {
 	const dataDir = resolveDataDir(process.env);
-	const result = setupBenchShop(dataDir);
-	console.log(`Bench Shop repository: ${result.path}`);
-	for (const [branch, sha] of Object.entries(result.branches))
-		console.log(`  ${branch.padEnd(20)} ${sha}`);
-	if (!existsSync(path.join(result.path, ".git")))
-		throw new Error("Repository was not created");
+	const existing = path.join(
+		dataDir,
+		"fixtures",
+		loadManifest().fixture,
+		".git",
+	);
+	if (process.argv.includes("--if-absent") && existsSync(existing)) {
+		console.log("Bench Shop repository already present; left unchanged");
+	} else {
+		const result = setupBenchShop(dataDir);
+		console.log(`Bench Shop repository: ${result.path}`);
+		for (const [branch, sha] of Object.entries(result.branches))
+			console.log(`  ${branch.padEnd(20)} ${sha}`);
+		if (!existsSync(path.join(result.path, ".git")))
+			throw new Error("Repository was not created");
+	}
 }
