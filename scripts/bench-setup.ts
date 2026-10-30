@@ -15,7 +15,7 @@ import path from "node:path";
 import { resolveDataDir } from "../apps/server/src/config.ts";
 import { isPathInside } from "../apps/server/src/lib/fs.ts";
 
-type Edit = { path: string; search: string; replace: string };
+export type Edit = { path: string; search: string; replace: string };
 export type BenchManifest = {
 	fixture: string;
 	source_dir: string;
@@ -48,7 +48,7 @@ export function loadManifest(): BenchManifest {
 }
 
 /** Applies one search/replace edit; the search text must occur exactly once. */
-function applyEdit(repo: string, edit: Edit) {
+export function applyEdit(repo: string, edit: Edit) {
 	const file = path.join(repo, edit.path);
 	const content = readFileSync(file, "utf8");
 	const first = content.indexOf(edit.search);
@@ -60,18 +60,14 @@ function applyEdit(repo: string, edit: Edit) {
 	);
 }
 
-export function setupBenchShop(dataDir: string): {
-	path: string;
-	branches: Record<string, string>;
-} {
-	const manifest = loadManifest();
-	const fixturesDir = path.join(dataDir, "fixtures");
-	const target = path.join(fixturesDir, manifest.fixture);
-	if (!isPathInside(fixturesDir, target) || target === fixturesDir)
-		throw new Error("Refusing to write outside the fixtures directory");
-	rmSync(target, { recursive: true, force: true });
-	mkdirSync(target, { recursive: true });
-
+/**
+ * Git for a deterministic fixture repository: fixed identity, hooks off, and one day between commits,
+ * so a rebuild produces identical commits.
+ */
+export function deterministicRepo(
+	target: string,
+	identity: { name: string; email: string },
+) {
 	let tick = 0;
 	const noHooks = path.join(os.tmpdir(), "tracera-no-hooks");
 	const git = (...args: string[]) => {
@@ -96,10 +92,10 @@ export function setupBenchShop(dataDir: string): {
 					PATH: process.env.PATH,
 					SystemRoot: process.env.SystemRoot,
 					GIT_CONFIG_NOSYSTEM: "1",
-					GIT_AUTHOR_NAME: "Bench Shop Dev",
-					GIT_AUTHOR_EMAIL: "dev@bench-shop.example",
-					GIT_COMMITTER_NAME: "Bench Shop Dev",
-					GIT_COMMITTER_EMAIL: "dev@bench-shop.example",
+					GIT_AUTHOR_NAME: identity.name,
+					GIT_AUTHOR_EMAIL: identity.email,
+					GIT_COMMITTER_NAME: identity.name,
+					GIT_COMMITTER_EMAIL: identity.email,
 					GIT_AUTHOR_DATE: date,
 					GIT_COMMITTER_DATE: date,
 				},
@@ -113,6 +109,25 @@ export function setupBenchShop(dataDir: string): {
 		git("commit", "--quiet", "--message", message);
 		tick += 1;
 	};
+	return { git, commit };
+}
+
+export function setupBenchShop(dataDir: string): {
+	path: string;
+	branches: Record<string, string>;
+} {
+	const manifest = loadManifest();
+	const fixturesDir = path.join(dataDir, "fixtures");
+	const target = path.join(fixturesDir, manifest.fixture);
+	if (!isPathInside(fixturesDir, target) || target === fixturesDir)
+		throw new Error("Refusing to write outside the fixtures directory");
+	rmSync(target, { recursive: true, force: true });
+	mkdirSync(target, { recursive: true });
+
+	const { git, commit } = deterministicRepo(target, {
+		name: "Bench Shop Dev",
+		email: "dev@bench-shop.example",
+	});
 
 	git("init", "--quiet", "--initial-branch=main");
 	const source = path.join(ROOT, manifest.source_dir);

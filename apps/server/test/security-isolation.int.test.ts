@@ -13,6 +13,7 @@ import {
 } from "../src/db/schema.ts";
 import { putBlob } from "../src/lib/fs.ts";
 import { newId } from "../src/lib/ids.ts";
+import { blobsDir } from "../src/modules/browser-evidence.ts";
 import { runIndexJob } from "../src/modules/graph.ts";
 import {
 	MEETING_EXTRACT_QUEUE,
@@ -47,6 +48,7 @@ import {
 	type TestContext,
 	tapOutput,
 } from "./helpers.ts";
+import { TINY_PNG } from "./png.ts";
 import {
 	COLLECTION_PREFIX,
 	collectionOf,
@@ -422,6 +424,20 @@ beforeAll(async () => {
 	if (!patch?.verification) throw new Error("the investigation has no patch");
 	ids.patches = patch.id;
 	ids.verifications = patch.verification.id;
+	// A reproduction screenshot of that investigation: a stored PNG and its evidence asset.
+	const reproScreenshot = await putBlob(blobsDir(ctx.config), TINY_PNG);
+	ids["repro-screenshots"] = newId("evd");
+	await ctx.db.insert(evidenceAssets).values({
+		id: ids["repro-screenshots"],
+		workspaceId: ownerWorkspaceId,
+		investigationId: ids.investigations,
+		kind: "repro_screenshot",
+		origin: "generated_by_tool",
+		blobSha256: reproScreenshot.sha256,
+		mimeType: "image/png",
+		sizeBytes: reproScreenshot.size,
+		retentionUntil: new Date(Date.now() + 86_400_000),
+	});
 
 	ownerToken = await createToken(ctx, ownerCookie, {
 		name: "owner laptop",

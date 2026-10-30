@@ -17,6 +17,7 @@ import {
 	useInvestigation,
 } from "./investigations.tsx";
 import { PublicationPanel } from "./publication.tsx";
+import { RuntimeEvidence } from "./runtime-evidence.tsx";
 import {
 	type Check,
 	type Investigation,
@@ -746,6 +747,8 @@ export function PatchReviewPage() {
 										)}
 									</div>
 								</Section>
+
+								<RuntimeEvidence patchId={data.id} />
 
 								<Section
 									title={`Diff (${data.files.length} ${data.files.length === 1 ? "file" : "files"})`}

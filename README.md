@@ -159,6 +159,10 @@ npm run test:e2e       # browser end-to-end tests of the web app
 
 Integration tests run against the local Docker PostgreSQL and refuse remote hosts.
 
+## Demo app
+
+`fixtures/shop-ui` is a small cart page with one planted bug: an order of exactly $50.00 is charged shipping although the page promises free shipping from $50. `npm run demo:setup -- <directory inside TRACERA_REPO_ROOTS>` creates it as a git repository. Register that path as a local repository with the commands `npm ci --ignore-scripts`, `npm test`, and `npm run start` and the app `{ "port": 4173, "ready_path": "/health", "base_url_path": "/cart" }`, then report the bug with the page URL `http://localhost:4173/cart`. Tracera starts the app in the sandbox, reproduces the bug in a browser, and verifies the patch by running the same steps against the patched app; the patch review page shows the before and after screenshots with each step's result. The sandboxed browser run needs Docker, so this works locally and not on the hosted deployment.
+
 ## Security model
 
 - Repository code never runs on the host. Tests, checks, and reproductions run only in the Docker sandbox: no network, read-only root filesystem, non-root user, dropped capabilities, and CPU, memory, process, and time limits. If Docker is unavailable the sandbox stages are blocked; there is no fallback to the host.

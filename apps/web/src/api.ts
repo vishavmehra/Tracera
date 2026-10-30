@@ -12,6 +12,7 @@ import {
 	type PatchImpactRequest,
 	type Problem,
 	ProblemSchema,
+	RuntimeEvidenceResponseSchema,
 } from "@tracera/contracts";
 import { z } from "zod";
 import {
@@ -344,6 +345,14 @@ export const decidePatch = (id: string, input: ApprovalRequest) =>
 		method: "POST",
 		body: input,
 	});
+
+// ---- Runtime evidence ----
+/** Sandboxed browser runs before and after a patch, with screenshots and step outcomes. */
+export const getRuntimeEvidence = (patchId: string) =>
+	request(
+		`/api/v1/patches/${enc(patchId)}/runtime-evidence`,
+		RuntimeEvidenceResponseSchema,
+	);
 
 // ---- Authorized actions on an approved patch (apply, commit, push) ----
 export const listPatchActions = (id: string) =>

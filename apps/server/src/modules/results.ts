@@ -48,7 +48,7 @@ async function ownInvestigation(db: Db, workspaceId: string, id: string) {
 	return row;
 }
 
-async function ownPatch(db: Db, workspaceId: string, id: string) {
+export async function ownPatch(db: Db, workspaceId: string, id: string) {
 	const [row] = await db
 		.select({ patch: patchProposals, investigation: investigations })
 		.from(patchProposals)

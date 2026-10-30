@@ -1,0 +1,13 @@
+{
+  "name": "shop-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "[demo fixture] Tracera demo app: a one-page cart that renders its totals through a pricing module. Not a real shop; its planted bug is created by scripts/shop-ui-setup.ts.",
+  "type": "module",
+  "license": "MIT",
+  "tracera": { "fixture": "demo", "app": "cart page on PORT (default 4173)" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

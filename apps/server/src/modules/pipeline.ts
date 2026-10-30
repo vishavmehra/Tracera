@@ -69,6 +69,11 @@ import {
 } from "./analysis.ts";
 import { audit, WORKER_ACTOR } from "./audit.ts";
 import {
+	browserEvidenceFields,
+	recordScreenshotEvidence,
+	storeScreenshot,
+} from "./browser-evidence.ts";
+import {
 	buildContextPack,
 	ContextError,
 	type ContextPack,
@@ -726,10 +731,9 @@ async function executeBrowser(
 		result.appLog || result.stderr
 			? storeText(ctx.config, `${result.appLog}${result.stderr}`)
 			: null,
-		report?.screenshot
-			? putBlob(blobsRoot(ctx.config), Buffer.from(report.screenshot, "base64"))
-			: null,
+		storeScreenshot(ctx.config, report?.screenshot),
 	]);
+	const screenshotEvidenceId = shotBlob ? newId("evd") : null;
 	const classification = classifyBrowserRun(result);
 	const failed = report?.steps.find((step) => step.status === "failed");
 	const values = {
@@ -758,6 +762,12 @@ async function executeBrowser(
 				failed_requests: report?.failed_requests.length ?? 0,
 				final_path: report?.final_path ?? null,
 				screenshot_sha256: shotBlob?.sha256 ?? null,
+				...browserEvidenceFields({
+					result,
+					plan: run.plan,
+					purpose: run.purpose,
+					screenshotEvidenceId,
+				}),
 			},
 			reproduction: {
 				status: classification.status,
@@ -775,6 +785,19 @@ async function executeBrowser(
 		.onConflictDoUpdate({ target: sandboxRuns.runKey, set: values })
 		.returning({ id: sandboxRuns.id });
 	const id = stored?.id ?? runKey;
+	if (shotBlob && screenshotEvidenceId)
+		await recordScreenshotEvidence(ctx.db, {
+			id: screenshotEvidenceId,
+			workspaceId: ctx.row.workspaceId,
+			investigationId: ctx.row.id,
+			runId: id,
+			runKey,
+			purpose: run.purpose,
+			patchId: run.patchId ?? null,
+			blob: shotBlob,
+			result,
+			capturedAt: values.finishedAt,
+		});
 	await audit(ctx.db, {
 		workspaceId: ctx.row.workspaceId,
 		actor: WORKER_ACTOR,
@@ -786,6 +809,7 @@ async function executeBrowser(
 			run_key: runKey,
 			purpose: run.purpose,
 			kind: "browser",
+			screenshot_sha256: shotBlob?.sha256 ?? null,
 			argv: values.argv,
 			image: values.image,
 			browser_image: result.executor.browserImage,
@@ -1641,7 +1665,12 @@ function browserReproItem(
 				run.screenshotSha256 ? [run.screenshotSha256] : [],
 			),
 		},
-		provenance: { method: "browser_sandbox", argv: plan.target.start },
+		provenance: {
+			method: "browser_sandbox",
+			argv: plan.target.start,
+			image: runs[0]?.result.executor.image ?? null,
+			browser_image: runs[0]?.result.executor.browserImage ?? null,
+		},
 	};
 }
 

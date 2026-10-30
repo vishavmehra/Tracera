@@ -688,20 +688,42 @@ export function createDockerExecutor(
 			};
 			if (done.stopped) return browserResult(done.stopped, fields);
 			if (done.exitCode === 137) return browserResult("limit_exceeded", fields);
-			if (done.exitCode === null || done.exitCode === 125) {
+			// 125-127: Docker could not start the browser container (127 when the namespace to join
+			// vanished mid-start, because the app had just exited).
+			if (
+				done.exitCode === null ||
+				(done.exitCode >= 125 && done.exitCode <= 127)
+			) {
 				// An app that exited before the browser joined its namespace (Docker refuses to join a
-				// stopped container) never became ready: the app's failure, not the sandbox's.
-				const state = await cli([
-					"inspect",
-					"--format",
-					"{{.State.Running}}",
-					app,
-				]);
-				if (state.ok && state.stdout.trim() === "false")
+				// stopped container) never became ready: the app's failure, not the sandbox's. It may still
+				// be exiting at the moment the join failed, so give its state a moment to settle.
+				let running = "";
+				for (let attempt = 0; attempt < 5; attempt++) {
+					const state = await cli([
+						"inspect",
+						"--format",
+						"{{.State.Running}}",
+						app,
+					]);
+					running = state.ok ? state.stdout.trim() : "";
+					if (running !== "true") break;
+					await new Promise((resolve) => setTimeout(resolve, 400));
+				}
+				if (running === "false")
 					return browserResult("exited", {
 						...fields,
 						report: {
 							ready: false,
+							startup: {
+								health_path: request.app.readyPath,
+								health_ok: false,
+								health_status: null,
+								health_attempts: 0,
+								health_waited_ms: 0,
+								health_error: "app_exited",
+								page_loaded: false,
+								page_error: null,
+							},
 							steps: [],
 							console_errors: [],
 							page_errors: [],

@@ -51,9 +51,25 @@ export const BrowserReproductionPlanOutputSchema = z.strictObject({
 	reported_observation: z.string().max(1000),
 });
 
+/** How the app came up, as the runner saw it: the health check, then the first page load. */
+export const BrowserStartupSchema = z.object({
+	health_path: z.string().max(200),
+	health_ok: z.boolean(),
+	/** HTTP status of the last health probe; null when nothing answered. */
+	health_status: z.number().int().nullable(),
+	health_attempts: z.number().int().min(0),
+	health_waited_ms: z.number().int().min(0),
+	/** Why the last probe failed: a network error code or `app_exited`, never app output. */
+	health_error: z.string().max(100).nullable(),
+	page_loaded: z.boolean(),
+	page_error: z.string().max(500).nullable(),
+});
+
 /** What the fixed runner reports from inside the sandbox; validated before use (untrusted output). */
 export const BrowserRunReportSchema = z.object({
 	ready: z.boolean(),
+	/** Absent only in reports that predate it (and in test doubles). */
+	startup: BrowserStartupSchema.optional(),
 	steps: z
 		.array(
 			z.object({
@@ -81,7 +97,7 @@ export const BrowserRunReportSchema = z.object({
 		)
 		.max(50),
 	final_path: z.string().max(500).nullable(),
-	/** JPEG, base64; capped by the runner. */
+	/** PNG of the page after the last step (also when a step failed), base64; capped by the runner. */
 	screenshot: z.string().max(1_500_000).nullable(),
 	duration_ms: z.number().int().min(0),
 });
@@ -92,4 +108,5 @@ export type BrowserStep = z.infer<typeof BrowserStepSchema>;
 export type BrowserReproductionPlanOutput = z.infer<
 	typeof BrowserReproductionPlanOutputSchema
 >;
+export type BrowserStartup = z.infer<typeof BrowserStartupSchema>;
 export type BrowserRunReport = z.infer<typeof BrowserRunReportSchema>;

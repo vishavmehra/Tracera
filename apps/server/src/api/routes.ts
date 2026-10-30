@@ -121,6 +121,7 @@ import { type AppDeps, authOf } from "./app.ts";
 import { registerMcpGuards } from "./mcp.ts";
 import { registerMeetingRoutes } from "./meeting-routes.ts";
 import { registerPublicationRoutes } from "./publication-routes.ts";
+import { registerRuntimeRoutes } from "./runtime-routes.ts";
 import { registerVisualRoutes } from "./visual-routes.ts";
 
 const ReportQuerySchema = z.object({
@@ -131,6 +132,7 @@ const ReportQuerySchema = z.object({
 export function registerRoutes(app: FastifyInstance, deps: AppDeps) {
 	const { db, config } = deps;
 	registerMcpGuards(app, db); // MCP tokens: per-token rate limits and mcp.tool_called audit
+	registerRuntimeRoutes(app, deps);
 	const failedLoginsByIp = createRateLimiter({ limit: 10, windowMs: 60_000 });
 	const failedLoginsByEmail = createRateLimiter({
 		limit: 50,

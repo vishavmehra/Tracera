@@ -24,8 +24,9 @@ const PLAYWRIGHT = "/opt/tracera/node_modules/playwright-core/index.mjs";
 const DEFAULT_STEP_TIMEOUT_MS = 5_000;
 const MAX_SCREENSHOT_CHARS = 1_400_000;
 
-const clip = (text: string | null | undefined, max: number) =>
-	text == null ? null : text.length > max ? `${text.slice(0, max)}…` : text;
+/** At most `max` characters, ellipsis included: the report contract rejects anything longer. */
+export const clip = (text: string | null | undefined, max: number) =>
+	text == null ? null : text.length > max ? `${text.slice(0, max - 1)}…` : text;
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,25 +72,51 @@ async function poll(
 	}
 }
 
+/** A network error as a short code (`ECONNREFUSED`, `TimeoutError`); never the app's own words. */
+const errorCode = (error: unknown) =>
+	clip(
+		(error as { cause?: { code?: string } }).cause?.code ??
+			(error as Error).name ??
+			"error",
+		100,
+	) ?? "error";
+
+/** Probes the ready path until the app answers (anything below 500) or the deadline passes. */
 async function waitForApp(
 	origin: string,
 	readyPath: string,
 	timeoutMs: number,
 ) {
-	const deadline = Date.now() + timeoutMs;
+	const started = Date.now();
+	const deadline = started + timeoutMs;
+	let attempts = 0;
+	let status: number | null = null;
+	let error: string | null = null;
 	while (Date.now() < deadline) {
+		attempts += 1;
 		try {
 			const response = await fetch(`${origin}${readyPath}`, {
 				signal: AbortSignal.timeout(2_000),
 				redirect: "manual",
 			});
-			if (response.status < 500) return true;
-		} catch {
+			status = response.status;
+			error = response.status < 500 ? null : `http_${response.status}`;
+			if (response.status < 500)
+				return {
+					ok: true,
+					status,
+					attempts,
+					waited: Date.now() - started,
+					error,
+				};
+		} catch (caught) {
 			// not listening yet
+			status = null;
+			error = errorCode(caught);
 		}
 		await sleep(250);
 	}
-	return false;
+	return { ok: false, status, attempts, waited: Date.now() - started, error };
 }
 
 export async function runBrowser(
@@ -109,11 +136,23 @@ export async function runBrowser(
 		duration_ms: 0,
 	};
 	const finish = () => ({ ...report, duration_ms: Date.now() - started });
-	report.ready = await waitForApp(
+	const health = await waitForApp(
 		origin,
 		input.ready_path,
 		input.startup_timeout_ms,
 	);
+	report.ready = health.ok;
+	const startup = {
+		health_path: input.ready_path,
+		health_ok: health.ok,
+		health_status: health.status,
+		health_attempts: health.attempts,
+		health_waited_ms: health.waited,
+		health_error: health.error,
+		page_loaded: false,
+		page_error: null as string | null,
+	};
+	report.startup = startup;
 	if (!report.ready) return finish();
 
 	const { chromium } = (await import(
@@ -170,9 +209,15 @@ export async function runBrowser(
 					failure: clip(request.failure()?.errorText ?? "failed", 300),
 				});
 		});
-		await page.goto(`${origin}${input.base_path}`, { timeout: 15_000 });
+		try {
+			await page.goto(`${origin}${input.base_path}`, { timeout: 15_000 });
+			startup.page_loaded = true;
+		} catch (error) {
+			startup.page_error = clip((error as Error).message.split("\n")[0], 500);
+		}
 
-		let stopped = false;
+		// A page that did not load runs no step: nothing was observed.
+		let stopped = !startup.page_loaded;
 		for (const [index, step] of input.steps.entries()) {
 			const assertion = step.action.startsWith("expect_");
 			if (stopped) {
@@ -210,16 +255,31 @@ export async function runBrowser(
 			});
 			if (!result.ok) stopped = true;
 		}
-		const url = new URL(page.url());
-		report.final_path = clip(`${url.pathname}${url.search}`, 500);
-		const shot = (
-			await page.screenshot({ type: "jpeg", quality: 60, timeout: 10_000 })
-		).toString("base64");
-		report.screenshot = shot.length <= MAX_SCREENSHOT_CHARS ? shot : null;
+		if (startup.page_loaded) {
+			const url = new URL(page.url());
+			report.final_path = clip(`${url.pathname}${url.search}`, 500);
+		}
+		// Taken whatever the steps did, so a failed run still shows what the page looked like.
+		report.screenshot = await screenshotOf(page);
 	} finally {
 		await browser.close();
 	}
 	return finish();
+}
+
+/** The page as a PNG (base64); null when it cannot be captured or exceeds the report's size cap. */
+async function screenshotOf(page: Page): Promise<string | null> {
+	try {
+		const png = await page.screenshot({
+			type: "png",
+			animations: "disabled",
+			timeout: 10_000,
+		});
+		const encoded = png.toString("base64");
+		return encoded.length <= MAX_SCREENSHOT_CHARS ? encoded : null;
+	} catch {
+		return null;
+	}
 }
 
 type StepResult = {

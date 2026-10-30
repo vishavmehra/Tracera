@@ -36,6 +36,13 @@ http.createServer((req, res) => {
   res.end(page);
 }).listen(Number(process.env.PORT), "localhost", () => console.log("listening"));
 `;
+// Answers its health check, then drops every other connection: the first page cannot load.
+const UNLOADABLE_SERVER = `const http = require("node:http");
+http.createServer((req, res) => {
+  if (req.url === "/health") { res.writeHead(200); return res.end("ok"); }
+  req.socket.destroy();
+}).listen(Number(process.env.PORT), "localhost");
+`;
 const PAGE = (factor: number) => `<!doctype html><html><body>
 <h1>Cart</h1><p data-testid="total">Total: $0</p>
 <button onclick="add()">Add item</button>
@@ -49,6 +56,7 @@ function app(
 	name: string,
 	factor: number,
 	scripts: Record<string, string> = {},
+	server = SERVER,
 ) {
 	const dir = path.join(root, name);
 	mkdirSync(dir, { recursive: true });
@@ -60,7 +68,7 @@ function app(
 			scripts: { start: "node server.js", ...scripts },
 		}),
 	);
-	writeFileSync(path.join(dir, "server.js"), SERVER);
+	writeFileSync(path.join(dir, "server.js"), server);
 	writeFileSync(path.join(dir, "page.html"), PAGE(factor));
 	return dir;
 }
@@ -119,6 +127,9 @@ const leftovers = (runId: string) =>
 		"--filter",
 		`name=tracera-browser-${runId}`,
 	)}`;
+const PNG_SIGNATURE = Buffer.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let buggy = "";
@@ -168,8 +179,20 @@ describe("browser reproduction [real Docker, real Chromium]", () => {
 			expect(report?.blocked_requests).toContain(
 				"https://tracker.example.com/beacon",
 			);
-			// A JPEG screenshot of the final state.
-			expect(report?.screenshot?.startsWith("/9j/")).toBe(true);
+			// A PNG screenshot of the final state, taken although a step failed.
+			const png = Buffer.from(report?.screenshot ?? "", "base64");
+			expect(png.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true);
+			expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1280, 800]);
+			// How the app came up: the health check answered, then the first page loaded.
+			expect(report?.startup).toMatchObject({
+				health_path: "/health",
+				health_ok: true,
+				health_status: 200,
+				health_error: null,
+				page_loaded: true,
+				page_error: null,
+			});
+			expect(report?.startup?.health_attempts).toBeGreaterThanOrEqual(1);
 			// The app itself has no network and no host secrets.
 			expect(result.appLog).toMatch(
 				/egress: (EAI_AGAIN|ENETUNREACH|ENOTFOUND)/,
@@ -245,9 +268,71 @@ describe("browser reproduction [real Docker, real Chromium]", () => {
 		const result = await executor.runBrowser(
 			request("br-broken-1", broken, { timeoutMs: 20_000 }),
 		);
-		expect(result.status).toBe("exited");
+		expect(
+			result.status,
+			`${result.detail ?? ""} ${result.stderr.slice(-400)}`,
+		).toBe("exited");
 		expect(result.report).toMatchObject({ ready: false, steps: [] });
+		// No page ever existed, so there is nothing to photograph; the report says why.
+		expect(result.report?.screenshot).toBeNull();
+		expect(result.report?.startup).toMatchObject({
+			health_ok: false,
+			health_status: null,
+			page_loaded: false,
+		});
+		expect(result.report?.startup?.health_error).toMatch(
+			/^(app_exited|ECONNREFUSED|TimeoutError)/,
+		);
 		expect(leftovers("br-broken-1")).toBe("");
+	});
+
+	it("photographs a first page that fails to load, and runs no step", async () => {
+		const unloadable = app("unloadable", 0, {}, UNLOADABLE_SERVER);
+		const result = await executor.runBrowser(
+			request("br-unloadable-1", unloadable),
+		);
+		expect(result.status).toBe("exited");
+		const report = result.report;
+		expect(report?.ready).toBe(true);
+		expect(report?.startup).toMatchObject({
+			health_ok: true,
+			page_loaded: false,
+		});
+		expect(report?.startup?.page_error).toMatch(/ERR_|Timeout/);
+		expect(report?.steps.map((s) => s.status)).toEqual(["skipped", "skipped"]);
+		expect(report?.final_path).toBeNull();
+		// The browser's own error page still shows what the user would have seen.
+		expect(
+			Buffer.from(report?.screenshot ?? "", "base64")
+				.subarray(0, 8)
+				.equals(PNG_SIGNATURE),
+		).toBe(true);
+		expect(leftovers("br-unloadable-1")).toBe("");
+	});
+
+	it("clips page text longer than the report allows instead of failing the run", async () => {
+		const wordy = app("wordy", 0);
+		writeFileSync(
+			path.join(wordy, "page.html"),
+			`<!doctype html><p data-testid="total">${"words ".repeat(800)}</p>`,
+		);
+		const result = await executor.runBrowser(
+			request("br-wordy-1", wordy, {
+				steps: [
+					step({
+						action: "expect_text",
+						target: { by: "test_id", value: "total", name: null, exact: null },
+						value: "Total: $4",
+						timeout_ms: 1000,
+					}),
+				],
+			}),
+		);
+		expect(result.status, result.detail).toBe("exited");
+		const failed = result.report?.steps[0];
+		expect(failed).toMatchObject({ status: "failed", assertion: true });
+		expect(failed?.actual?.length).toBeLessThanOrEqual(1000);
+		expect(failed?.actual?.endsWith("…")).toBe(true);
 	});
 
 	it("refuses unsafe requests before Docker is called", async () => {

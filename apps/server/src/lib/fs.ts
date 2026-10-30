@@ -43,6 +43,18 @@ export async function putBlob(
 	return { sha256, path: target, size: content.length };
 }
 
+/** A blob written by putBlob, as bytes; null when the hash is malformed, the blob is missing, or its bytes no longer match its name. */
+export async function readBlobBytes(
+	dir: string,
+	sha256: string | null | undefined,
+): Promise<Buffer | null> {
+	if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null;
+	const bytes = await readFile(
+		path.join(dir, "sha256", sha256.slice(0, 2), sha256.slice(2, 4), sha256),
+	).catch(() => null);
+	return bytes && sha256Hex(bytes) === sha256 ? bytes : null;
+}
+
 /** A blob written by putBlob, as UTF-8; null when the hash is malformed or the blob is missing. */
 export async function readBlobUtf8(
 	dir: string,
@@ -52,16 +64,5 @@ export async function readBlobUtf8(
 	return readFile(
 		path.join(dir, "sha256", sha256.slice(0, 2), sha256.slice(2, 4), sha256),
 		"utf8",
-	).catch(() => null);
-}
-
-/** A blob written by putBlob, as bytes; null when the hash is malformed or the blob is missing. */
-export async function readBlobBytes(
-	dir: string,
-	sha256: string | null | undefined,
-): Promise<Buffer | null> {
-	if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null;
-	return readFile(
-		path.join(dir, "sha256", sha256.slice(0, 2), sha256.slice(2, 4), sha256),
 	).catch(() => null);
 }
