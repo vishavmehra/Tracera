@@ -45,6 +45,8 @@ export default defineConfig(({ mode }) => {
 							"**/node_modules/**",
 							// The web app has its own Vitest (jsdom) and Playwright configuration.
 							"apps/web/**",
+							// So does the Chrome extension (browser globals, build-time defines).
+							"apps/extension/**",
 						],
 					},
 				},

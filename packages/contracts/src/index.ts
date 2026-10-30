@@ -4,6 +4,7 @@ export * from "./browser-repro.ts";
 export * from "./bug-reports.ts";
 export * from "./common.ts";
 export * from "./dependencies.ts";
+export * from "./evidence.ts";
 export * from "./graph.ts";
 export * from "./investigations.ts";
 export * from "./meetings.ts";

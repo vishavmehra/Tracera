@@ -74,6 +74,8 @@ let segmentId = "";
 let intruderRepoId = "";
 let intruderBugId = "";
 let intruderMeetingId = "";
+/** A valid screenshot upload, so a 404 for the evidence route can only come from the workspace check. */
+let screenshotUpload: { payload: Buffer; contentType: string };
 let intruderCandidateId = "";
 
 /** What a model could return for the Teams-style transcript: one bug that cites its segment. */
@@ -248,6 +250,36 @@ beforeAll(async () => {
 	setupBenchShop(ctx.config.dataDir);
 	await ctx.app.ready();
 	await resetDatabase(ctx.pool);
+	const form = new FormData();
+	form.set(
+		"meta",
+		JSON.stringify({
+			kind: "screenshot",
+			captured_at: "2026-10-25T10:00:00.000Z",
+			page_url: "https://shop.example/dashboard",
+			page_title: "Dashboard",
+			viewport: { width: 1280, height: 720 },
+			device_pixel_ratio: 2,
+			client_redactions: [],
+			client_annotations: [],
+		}),
+	);
+	form.set(
+		"file",
+		new Blob(
+			[new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2])],
+			{ type: "image/png" },
+		),
+		"screenshot.png",
+	);
+	const encoded = new Request("http://localhost/", {
+		method: "POST",
+		body: form,
+	});
+	screenshotUpload = {
+		payload: Buffer.from(await encoded.arrayBuffer()),
+		contentType: encoded.headers.get("content-type") ?? "",
+	};
 	const created = await createOwner(ctx.db);
 	ownerWorkspaceId = created.workspaceId;
 	ownerUserId = created.userId;
@@ -501,10 +533,17 @@ function requestFor(method: Method, routePath: string) {
 			consent_attested: true,
 		},
 	};
+	const upload = key === "POST /api/v1/bug-reports/:id/evidence";
 	return {
 		url: `${ownerUrl(routePath)}${query[key] ?? ""}`,
-		payload:
-			method === "POST" || method === "PATCH" ? (body[key] ?? {}) : undefined,
+		payload: upload
+			? screenshotUpload.payload
+			: method === "POST" || method === "PATCH"
+				? (body[key] ?? {})
+				: undefined,
+		headers: (upload
+			? { "content-type": screenshotUpload.contentType }
+			: {}) as Record<string, string>,
 	};
 }
 
@@ -542,15 +581,15 @@ describe("workspace isolation [mock inference, fake executor]", () => {
 
 	it("answers 404 to another workspace's session and token for every foreign ID", async () => {
 		for (const route of idRoutes()) {
-			const { url, payload } = requestFor(route.method, route.path);
+			const { url, payload, headers } = requestFor(route.method, route.path);
 			expectNotFound(
-				await intruder(route.method, url, payload),
+				await intruder(route.method, url, payload, headers),
 				`${routeKey(route)} as B's session`,
 			);
 			const rule = ROUTE_RULES.find((r) => routeKey(r) === routeKey(route));
 			if (rule?.access === "session" || rule?.access === "owner") continue;
 			expectNotFound(
-				await intruderToken(route.method, url, payload),
+				await intruderToken(route.method, url, payload, headers),
 				`${routeKey(route)} as B's token`,
 			);
 		}

@@ -22,6 +22,7 @@
 - Authorized actions on an approved patch, each a separate request from a signed-in owner: download the reviewed diff, apply it to a local working tree, commit it to a new branch, and push that branch (never forced, never to the default branch). They act on repositories registered as local paths, so they are a local feature. Pull requests are not built.
 - A web workspace (React) for repositories, graph exploration, questions, impact, investigations, and review.
 - Meeting transcripts: upload a WebVTT, SRT, or plain-text transcript (or import one from Google Meet), review the bug candidates a model proposes with quotes from the transcript, and turn confirmed ones into bug reports and investigations (see below).
+- A Chrome extension (Manifest V3) that captures a screenshot of the current tab, lets you black out regions, and files a bug report with that evidence (see below). It works with a local or a hosted API: the API origin is fixed when you build it.
 - A local stdio MCP server so coding agents can use Tracera (see below).
 
 **Stack:** TypeScript on Node.js, Fastify, PostgreSQL with Drizzle ORM, pg-boss for background jobs, Zod schemas shared through `packages/contracts`, React with Vite and Tailwind for the web app, Docker for the sandbox, Vitest and Playwright for tests.
@@ -35,6 +36,7 @@ Tracera's inference runs on Meta's Muse models through the Meta Model API (Muse 
 - `apps/server`: the REST API and the background worker (one codebase, two entrypoints), plus the inference gateway and the Docker sandbox executor.
 - `apps/web`: the web workspace.
 - `apps/mcp`: the MCP server.
+- `apps/extension`: the Chrome extension.
 - `packages/contracts`: every request, response, and model-output schema.
 - PostgreSQL for state and the job queue; Docker for sandboxed execution.
 
@@ -114,6 +116,19 @@ tool_timeout_sec = 60
 TRACERA_API_URL = "http://127.0.0.1:8787"
 ```
 
+## Chrome extension
+
+`apps/extension` is a Manifest V3 extension for reporting a bug from the page you are looking at. Click its icon, review what will be sent (title, description, steps, page address without query string or fragment, scrubbed page-reported console lines), black out regions of the screenshot (they are burned into the pixels before upload), and submit. It creates a bug report, uploads the screenshot as evidence, and can start an investigation. Nothing is captured until you click, and it needs a personal access token that you paste once after accepting the consent text.
+
+```sh
+# the API and web origins are fixed at build time; the API origin becomes its only host permission
+TRACERA_EXTENSION_DEFAULT_API_URL=<API origin, default http://127.0.0.1:8787> TRACERA_EXTENSION_DEFAULT_WEB_URL=<web origin, default http://127.0.0.1:5173> npm run build:extension
+```
+
+Then open `chrome://extensions`, enable developer mode, and load `apps/extension/dist` unpacked. Create the token with `POST /api/v1/tokens` and client kind `extension`; the full flow also needs the scopes `repositories:read`, `investigations:write`, and `investigations:read`, which you can grant by sending a `scopes` list. `npm run test:extension` runs its unit tests and `npm run typecheck:extension` its type check.
+
+The upload endpoint is `POST /api/v1/bug-reports/{id}/evidence` (`multipart/form-data`: one `file` part and one `meta` JSON part), for PNG, JPEG, and WebP screenshots up to 10 MB. The server checks the actual bytes, not the declared type. Page details and redaction regions are stored as client-reported provenance, because the server cannot see what the extension blacked out.
+
 ## Meetings and Google Meet
 
 Meetings turn what people said in a call into reviewed bug reports. A model reads the transcript and proposes candidates; code rejects any candidate whose quotes do not occur verbatim in the segments it cites and flags likely duplicates, and the model sets no status. A person edits, dismisses, or confirms each remaining one, and confirming creates a bug report and, unless you decline, an investigation through the normal services.
@@ -155,7 +170,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 
 - Repositories are local paths only. There is no integration with GitHub or other hosted Git providers: no remote cloning, sync, or pull-request creation.
 - Applying a patch, committing to a new branch, and pushing without force are implemented for local-path repositories; opening a pull request is not. Approval itself records a decision only.
-- Meetings are available through the REST API only; the web app has no Meetings page yet. The Google Meet import is tested against recorded synthetic responses and needs your own Google Cloud OAuth client to run for real. There is no browser extension in this repository.
+- Meetings are available through the REST API only; the web app has no Meetings page yet. The Google Meet import is tested against recorded synthetic responses and needs your own Google Cloud OAuth client to run for real.
 - The code graph parses JavaScript, TypeScript, and SQL. Other languages are detected and counted but not parsed.
 - The Meta adapter is exercised in automated tests against a local stand-in server; running it for real needs a Meta Model API key with billing enabled.
 - Accounts come from `npm run db:seed`; there is no sign-up flow, and personal access tokens are created through the REST API because the web app has no token screen.

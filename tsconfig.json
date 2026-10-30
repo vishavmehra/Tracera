@@ -18,5 +18,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["apps/*/src", "apps/*/test", "apps/*/*.ts", "packages/*/src", "packages/*/test", "scripts", "vitest.config.ts"],
-  "exclude": ["apps/web"]
+  "exclude": ["apps/web", "apps/extension"]
 }

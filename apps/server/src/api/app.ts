@@ -7,6 +7,7 @@ import type { Config } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import { AppError, problemBody } from "../lib/http.ts";
 import { type AuthContext, authenticateRequest } from "../modules/auth.ts";
+import { evidenceRoutes } from "./evidence-routes.ts";
 import { registerRoutes } from "./routes.ts";
 
 declare module "fastify" {
@@ -127,6 +128,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 			),
 	);
 
+	// Own plugin scope: the multipart parser and the 10 MB body limit apply to the upload route only.
+	app.register(async (scope) => evidenceRoutes(scope, deps));
 	registerRoutes(app, deps);
 	return app;
 }

@@ -107,7 +107,11 @@ export const ROUTE_RULES: RouteRule[] = [
 		"GET /api/v1/actions/:id",
 		"GET /api/v1/patches/:id/download",
 	),
-	...rules("reports:write", "POST /api/v1/bug-reports"),
+	...rules(
+		"reports:write",
+		"POST /api/v1/bug-reports",
+		"POST /api/v1/bug-reports/:id/evidence",
+	),
 	...rules(
 		"reports:read",
 		"GET /api/v1/bug-reports",
