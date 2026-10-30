@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { idSchema } from "@tracera/contracts";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
 import {
 	ApiError,
@@ -15,6 +15,7 @@ import {
 	bugReportQuery,
 	investigationQueryKey,
 	useInvestigation,
+	withCode,
 } from "./investigations.tsx";
 import { PublicationPanel } from "./publication.tsx";
 import { RuntimeEvidence } from "./runtime-evidence.tsx";
@@ -31,12 +32,14 @@ import {
 	buttonClass,
 	Chevron,
 	CodeBlock,
+	type DiffFile,
+	DiffFileView,
 	Empty,
 	ErrorNotice,
 	Facts,
 	formatDuration,
+	GENERIC_TONES,
 	Glyph,
-	hintClass,
 	humanize,
 	InferenceLabel,
 	inputClass,
@@ -44,7 +47,10 @@ import {
 	Loading,
 	labelClass,
 	linkClass,
+	Notice,
 	OutcomeBadge,
+	outcomeTone,
+	PageHeader,
 	primaryButtonClass,
 	QueryView,
 	Section,
@@ -52,6 +58,11 @@ import {
 	StateBadge,
 	Status,
 	Time,
+	Timeline,
+	type TimelineStop,
+	type Tone,
+	type TraceStop,
+	TraceStrip,
 } from "./ui.tsx";
 
 function Checks({ checks }: { checks: Check[] }) {
@@ -60,22 +71,32 @@ function Checks({ checks }: { checks: Check[] }) {
 	return (
 		<ul className="divide-y divide-line border-line border-y text-sm">
 			{checks.map((check) => (
-				<li key={check.kind} className="py-2">
-					<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-						<StateBadge value={check.status} />
+				<li key={check.kind} className="py-2.5">
+					<div className="flex items-baseline justify-between gap-3">
 						<span className="font-medium">{humanize(check.kind)}</span>
-						{check.command && (
-							<code className="break-all text-ink-2 text-xs">
-								{check.command}
-							</code>
-						)}
-						<span className="ml-auto flex gap-3 text-ink-3 text-xs tabular-nums">
-							{check.exit_code !== null && <span>Exit {check.exit_code}</span>}
-							{check.duration_ms !== null && (
-								<span>{formatDuration(check.duration_ms)}</span>
-							)}
-						</span>
+						<StateBadge value={check.status} />
 					</div>
+					{(check.command ||
+						check.exit_code !== null ||
+						check.duration_ms !== null) && (
+						<div className="mt-1 flex items-baseline justify-between gap-3 text-xs">
+							{check.command ? (
+								<code className="min-w-0 break-all text-ink-2">
+									{check.command}
+								</code>
+							) : (
+								<span />
+							)}
+							<span className="flex shrink-0 gap-3 text-ink-3 tabular-nums">
+								{check.exit_code !== null && (
+									<span>Exit {check.exit_code}</span>
+								)}
+								{check.duration_ms !== null && (
+									<span>{formatDuration(check.duration_ms)}</span>
+								)}
+							</span>
+						</div>
+					)}
 					{check.reason && (
 						<p className="mt-0.5 text-ink-3 text-xs">
 							Reason <code className="text-ink-2">{check.reason}</code>
@@ -93,7 +114,7 @@ function Environment({
 	environment: VerificationEnvironment;
 }) {
 	return (
-		<dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+		<dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
 			<dt className="text-ink-3">Executor</dt>
 			<dd>{environment.executor}</dd>
 			<dt className="text-ink-3">Image</dt>
@@ -152,9 +173,9 @@ function VerificationPanel({ patch }: { patch: Patch }) {
 	return (
 		<QueryView query={verification} what="Verification">
 			{(run) => (
-				<div className="space-y-5">
-					<div className="space-y-1">
-						<OutcomeBadge outcome={run.outcome} />
+				<div className="space-y-6">
+					<div className="space-y-1.5">
+						<OutcomeBadge outcome={run.outcome} size="sm" />
 						<p className="text-ink">{run.label}</p>
 						<p className="text-ink-3 text-xs">
 							Run {run.status}, finished <Time iso={run.finished_at} />
@@ -162,8 +183,8 @@ function VerificationPanel({ patch }: { patch: Patch }) {
 					</div>
 					{run.outcome_reasons.length > 0 && (
 						<div>
-							<h3 className="font-medium text-sm">Why not fully verified</h3>
-							<ul className="mt-1.5 space-y-1">
+							<h3 className="font-semibold text-sm">Why not fully verified</h3>
+							<ul className="mt-2 space-y-1.5">
 								{run.outcome_reasons.map((reason) => (
 									<li key={reason} className="flex items-center gap-2">
 										<Glyph tone="warn" />
@@ -174,11 +195,11 @@ function VerificationPanel({ patch }: { patch: Patch }) {
 						</div>
 					)}
 					<div>
-						<h3 className="mb-1.5 font-medium text-sm">Checks</h3>
+						<h3 className="mb-2 font-semibold text-sm">Checks</h3>
 						<Checks checks={run.checks} />
 					</div>
 					<div>
-						<h3 className="mb-1.5 font-medium text-sm">Environment</h3>
+						<h3 className="mb-2 font-semibold text-sm">Environment</h3>
 						<VerificationEnvironmentView
 							verification={run}
 							investigationId={patch.investigation_id}
@@ -263,16 +284,19 @@ function ApprovalForm({
 			</p>
 			<fieldset>
 				<legend className={labelClass}>Decision</legend>
-				<div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+				<div className="mt-2 space-y-2">
 					{DECISIONS.map(([value, label]) => (
-						<label key={value} className="flex items-center gap-2">
+						<label
+							key={value}
+							className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md border border-line-strong bg-canvas px-3 py-2 transition-colors duration-150 hover:border-control has-[:checked]:border-primary has-[:checked]:bg-wash"
+						>
 							<input
 								type="radio"
 								name="decision"
 								value={value}
 								checked={decision === value}
 								onChange={() => setDecision(value)}
-								className="size-4 accent-accent"
+								className="size-4"
 							/>
 							{label}
 						</label>
@@ -280,24 +304,24 @@ function ApprovalForm({
 				</div>
 			</fieldset>
 			{decision === "approved" && required.length > 0 && (
-				<fieldset className="border-warning/60 border-l-2 pl-3">
+				<fieldset className="rounded-md border border-warning/40 bg-warning/[0.06] p-3.5">
 					<legend className={`${labelClass} float-left w-full`}>
 						Acknowledge before approving
 					</legend>
-					<p className={`${hintClass} clear-left pt-1`}>
+					<p className="clear-left pt-1 text-ink-2 text-xs">
 						{verification.outcome === "verified"
 							? "The patch was verified, but it carries risks."
 							: `The outcome is ${verification.outcome}, not verified.`}{" "}
 						Approving means accepting each of these.
 					</p>
-					<div className="mt-2.5 space-y-2">
+					<div className="mt-3 space-y-2.5">
 						{required.map((code) => {
 							const risk = patch.risks.find((item) => item.code === code);
 							return (
 								<label key={code} className="flex items-start gap-2.5">
 									<input
 										type="checkbox"
-										className="mt-0.5 size-4 shrink-0 accent-accent"
+										className="mt-0.5 size-4 shrink-0"
 										checked={acknowledged.has(code)}
 										onChange={(event) => {
 											const next = new Set(acknowledged);
@@ -386,7 +410,7 @@ function ApprovalSection({
 	});
 	if (patch.approval)
 		return (
-			<div className="space-y-2 text-sm">
+			<div className="space-y-3 text-sm">
 				<StateBadge value={patch.approval.decision} size="sm" />
 				<p className="text-ink-2">
 					Decided <Time iso={patch.approval.decided_at} /> with the outcome{" "}
@@ -439,14 +463,6 @@ function ApprovalSection({
 		</QueryView>
 	);
 }
-
-type DiffLine = {
-	kind: "hunk" | "add" | "del" | "context" | "meta";
-	text: string;
-	old: number | null;
-	new: number | null;
-};
-type DiffFile = { path: string; lines: DiffLine[] };
 
 /**
  * Splits a unified diff into files and numbered lines. Hunk headers carry the line counts, so a
@@ -511,65 +527,6 @@ export function parseDiff(diff: string): DiffFile[] {
 		target.lines.push({ kind: "meta", text, old: null, new: null });
 	}
 	return files;
-}
-
-const LINE_STYLES: Record<DiffLine["kind"], string> = {
-	add: "bg-diff-add text-diff-add-fg",
-	del: "bg-diff-del text-diff-del-fg",
-	context: "text-ink-2",
-	hunk: "",
-	meta: "",
-};
-
-function DiffFileView({ file }: { file: DiffFile }) {
-	const added = file.lines.filter((line) => line.kind === "add").length;
-	const removed = file.lines.filter((line) => line.kind === "del").length;
-	return (
-		<figure className="min-w-0 overflow-hidden rounded border border-line bg-surface">
-			<figcaption className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-line border-b bg-elevated/50 px-3 py-1.5 text-xs">
-				<code className="break-all text-ink">{file.path}</code>
-				<span className="flex gap-2 tabular-nums">
-					<span className="text-diff-add-fg">+{added}</span>
-					<span className="text-diff-del-fg">−{removed}</span>
-				</span>
-			</figcaption>
-			<pre className="max-h-[36rem] overflow-auto text-[12px] leading-[1.65]">
-				<code className="block min-w-max py-1">
-					{file.lines.map((line, index) =>
-						line.kind === "meta" ? null : line.kind === "hunk" ? (
-							<span
-								// biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional
-								key={index}
-								className="block bg-ocean/35 px-3 py-0.5 text-link"
-							>
-								{line.text}
-							</span>
-						) : (
-							<span
-								// biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional
-								key={index}
-								className={`grid grid-cols-[4ch_4ch_1fr] gap-x-3 pr-3 ${LINE_STYLES[line.kind]}`}
-							>
-								<span
-									aria-hidden="true"
-									className="select-none text-right text-ink-3/70"
-								>
-									{line.old ?? ""}
-								</span>
-								<span
-									aria-hidden="true"
-									className="select-none text-right text-ink-3/70"
-								>
-									{line.new ?? ""}
-								</span>
-								<span>{line.text || " "}</span>
-							</span>
-						),
-					)}
-				</code>
-			</pre>
-		</figure>
-	);
 }
 
 function Diff({ patchId }: { patchId: string }) {
@@ -654,6 +611,58 @@ function InvestigationCrumbs({
 	);
 }
 
+/**
+ * Where a patch stands, from stored data only: generated, then checked, then decided. A patch that
+ * was proposed has not been verified, and a verified one has not been applied; each stop says only
+ * what its own record says.
+ */
+function patchTrace(
+	patch: Patch,
+	investigation: Investigation | undefined,
+): TraceStop[] {
+	const { verification, approval } = patch;
+	const awaiting =
+		investigation?.status === "awaiting_approval" &&
+		patch.status === "proposed";
+	return [
+		{
+			key: "patch",
+			label: "Patch",
+			value: humanize(patch.status),
+			tone: GENERIC_TONES[patch.status] ?? "neutral",
+			open: patch.status === "proposed",
+			reached: true,
+			href: "#change-heading",
+		},
+		{
+			key: "verification",
+			label: "Verification",
+			value: verification ? humanize(verification.outcome) : "Not run",
+			tone: verification ? outcomeTone(verification.outcome) : "neutral",
+			reached: verification !== null,
+			href: "#verification-heading",
+		},
+		{
+			key: "decision",
+			label: "Decision",
+			value: approval
+				? humanize(approval.decision)
+				: awaiting
+					? "Awaiting decision"
+					: "Not yet",
+			tone: approval
+				? (GENERIC_TONES[approval.decision] ?? "neutral")
+				: awaiting
+					? "decision"
+					: "neutral",
+			open: approval === null,
+			reached: approval !== null,
+			pending: awaiting,
+			href: "#approval-heading",
+		},
+	];
+}
+
 export function PatchReviewPage() {
 	const { investigationId = "", patchId = "" } = useParams();
 	const valid =
@@ -681,69 +690,78 @@ export function PatchReviewPage() {
 							investigationId={investigationId}
 							page={`Patch attempt ${data.attempt}`}
 						/>
-						<header className="mt-3">
-							<h1 className="font-semibold text-2xl leading-tight tracking-tight">
-								Patch attempt {data.attempt}
-							</h1>
-							<div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-								<StateBadge value={data.status} size="sm" />
-								{data.verification ? (
-									<OutcomeBadge
-										outcome={data.verification.outcome}
-										label={data.verification.label}
-									/>
-								) : (
-									<Status tone="neutral">Not verified</Status>
-								)}
-							</div>
-							<Facts
-								className="mt-6 border-line border-y py-4"
-								items={[
-									["Base commit", <Sha key="base" sha={data.base_commit} />],
-									data.hypothesis_handle !== null && [
-										"For hypothesis",
-										<code key="hypothesis">{data.hypothesis_handle}</code>,
-									],
-									data.model !== null && [
-										"Proposed by",
-										<InferenceLabel
-											key="model"
-											mock={data.model.provider === "mock"}
-											detail={`${data.model.provider}/${data.model.model}`}
-										/>,
-									],
-									[
-										"Files",
-										<span key="files" className="tabular-nums">
-											{data.files.length}{" "}
-											<span className="text-diff-add-fg">+{added}</span>{" "}
-											<span className="text-diff-del-fg">−{removed}</span>
-										</span>,
-									],
-									["Proposed", <Time key="created" iso={data.created_at} />],
-								]}
-							/>
-						</header>
+						<div className="mt-3">
+							<PageHeader title={`Patch attempt ${data.attempt}`}>
+								<div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+									<StateBadge value={data.status} size="sm" />
+									{data.verification ? (
+										<OutcomeBadge
+											outcome={data.verification.outcome}
+											label={data.verification.label}
+											size="sm"
+										/>
+									) : (
+										<Status tone="neutral" size="sm">
+											Not verified
+										</Status>
+									)}
+								</div>
+								<TraceStrip
+									className="mt-7 max-w-3xl"
+									label="Patch trace"
+									stops={patchTrace(data, investigation.data)}
+								/>
+							</PageHeader>
+						</div>
+						<Facts
+							className="mt-6"
+							items={[
+								["Base commit", <Sha key="base" sha={data.base_commit} />],
+								data.hypothesis_handle !== null && [
+									"For hypothesis",
+									<code key="hypothesis">{data.hypothesis_handle}</code>,
+								],
+								data.model !== null && [
+									"Proposed by",
+									<InferenceLabel
+										key="model"
+										mock={data.model.provider === "mock"}
+										detail={`${data.model.provider}/${data.model.model}`}
+									/>,
+								],
+								[
+									"Files",
+									<span key="files" className="tabular-nums">
+										{data.files.length}{" "}
+										<span className="text-diff-add-fg">+{added}</span>{" "}
+										<span className="text-diff-del-fg">−{removed}</span>
+									</span>,
+								],
+								["Proposed", <Time key="created" iso={data.created_at} />],
+							]}
+						/>
 
-						<div className="mt-8 grid gap-x-12 gap-y-2 lg:grid-cols-[minmax(0,1fr)_21rem]">
+						<div className="mt-10 grid gap-x-12 gap-y-2 lg:grid-cols-[minmax(0,1fr)_22rem]">
 							<div className="min-w-0 [&>section:first-child]:mt-0">
 								<Section title="Change" id="change-heading">
 									<div className="max-w-[68ch] space-y-3 text-sm">
 										<p className="font-medium text-[15px] text-ink">
-											{data.summary}
+											{withCode(data.summary)}
 										</p>
 										<p className="whitespace-pre-wrap text-ink-2 leading-relaxed">
-											{data.rationale}
+											{withCode(data.rationale)}
 										</p>
 										<p>
 											<span className="text-ink-3">Expected effect: </span>
-											{data.expected_effect}
+											{withCode(data.expected_effect)}
 										</p>
 										{data.apply_error && (
-											<p className="border-error border-l-2 pl-3 text-error">
-												<code>{data.apply_error.code}</code>:{" "}
-												{data.apply_error.message}
-											</p>
+											<Notice tone="bad" title="Applying the patch failed">
+												<p className="break-words">
+													<code>{data.apply_error.code}</code>:{" "}
+													{data.apply_error.message}
+												</p>
+											</Notice>
 										)}
 									</div>
 								</Section>
@@ -754,20 +772,22 @@ export function PatchReviewPage() {
 									title={`Diff (${data.files.length} ${data.files.length === 1 ? "file" : "files"})`}
 									id="diff-heading"
 								>
-									<ul className="mb-3 space-y-1 text-sm">
-										{data.files.map((file) => (
-											<li
-												key={file.path}
-												className="flex flex-wrap items-center gap-x-3"
-											>
-												<StateBadge value={file.change_type} />
-												<code className="break-all text-xs">{file.path}</code>
-												<span className="text-ink-3 text-xs tabular-nums">
-													+{file.additions} −{file.deletions}
-												</span>
-											</li>
-										))}
-									</ul>
+									{data.files.length > 1 && (
+										<ul className="mb-4 space-y-1.5 text-sm">
+											{data.files.map((file) => (
+												<li
+													key={file.path}
+													className="flex flex-wrap items-center gap-x-3"
+												>
+													<StateBadge value={file.change_type} />
+													<code className="break-all text-xs">{file.path}</code>
+													<span className="text-ink-3 text-xs tabular-nums">
+														+{file.additions} −{file.deletions}
+													</span>
+												</li>
+											))}
+										</ul>
+									)}
 									<Diff patchId={data.id} />
 								</Section>
 
@@ -790,7 +810,7 @@ export function PatchReviewPage() {
 											No risk was recorded for this patch.
 										</p>
 									) : (
-										<ul className="space-y-2 text-sm">
+										<ul className="space-y-2.5 text-sm">
 											{data.risks.map((risk) => (
 												<li key={risk.code} className="flex gap-2.5">
 													<Glyph tone="warn" className="mt-1.5" />
@@ -823,6 +843,28 @@ export function PatchReviewPage() {
 				);
 			}}
 		</QueryView>
+	);
+}
+
+/** One section of the report, hung from a stop on its trace. */
+function ReportSection({
+	id,
+	title,
+	last = false,
+	children,
+}: {
+	id: string;
+	title: string;
+	last?: boolean;
+	children: ReactNode;
+}) {
+	return (
+		<section aria-labelledby={id} className={`pt-1 ${last ? "" : "pb-10"}`}>
+			<h2 id={id} className="font-semibold text-base text-ink tracking-tight">
+				{title}
+			</h2>
+			<div className="mt-3">{children}</div>
+		</section>
 	);
 }
 
@@ -861,135 +903,141 @@ export function ReportPage() {
 		<>
 			{crumbs}
 			<QueryView query={report} what="Report">
-				{(data) => (
-					<article className="max-w-3xl">
-						<title>{`Report · ${data.original_issue.title} · Tracera`}</title>
-						<header className="mt-3">
-							<p className="text-ink-3 text-sm">Resolution report</p>
-							<h1 className="mt-1 break-words font-semibold text-2xl leading-tight tracking-tight">
-								{data.original_issue.title}
-							</h1>
-							<div className="mt-2.5">
-								<OutcomeBadge
-									outcome={data.verification.outcome}
-									label={data.verification.label}
-								/>
-							</div>
-							<div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-line border-y py-4">
-								<Facts
-									items={[
-										["Version", data.version],
-										["Written", <Time key="written" iso={data.created_at} />],
-										["Assembled by", humanize(data.generated_with.method)],
-										[
-											"Inference",
-											<span
-												key="inference"
-												className="flex flex-wrap items-center gap-2"
-											>
-												<InferenceLabel
-													mock={data.generated_with.mock}
-													detail={
-														data.generated_with.models.join(", ") || undefined
-													}
-												/>
-												{data.generated_with.placeholder_provider && (
-													<Status tone="warn">Placeholder provider</Status>
-												)}
-											</span>,
-										],
-									]}
-								/>
-								<a
-									href={`/api/v1/investigations/${investigationId}/report?format=markdown`}
-									className={buttonClass}
-								>
-									Download Markdown
-								</a>
-							</div>
-						</header>
-						<Section title="Reproduction" id="r-repro">
-							<div className="space-y-1.5 text-sm">
-								<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-									<StateBadge value={data.reproduction.baseline} size="sm" />
-									<span>{data.reproduction.label}</span>
-									{data.reproduction.reason && (
-										<code className="text-ink-2 text-xs">
-											{data.reproduction.reason}
-										</code>
-									)}
-								</p>
-								<p className="max-w-[68ch] text-ink-2 leading-relaxed">
-									{data.reproduction.summary}
-								</p>
-							</div>
-						</Section>
-						<Section title="Root cause" id="r-cause">
-							{data.confirmed_findings.length === 0 ? (
-								<p className="text-sm">
-									No finding was confirmed by verification.
-								</p>
-							) : (
-								<ul className="space-y-4 text-sm">
-									{data.confirmed_findings.map((finding) => (
-										<li key={finding.handle} className="space-y-1">
-											<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-												<Status tone="good">Confirmed</Status>
-												<code className="text-ink-3 text-xs">
-													{finding.handle}
-												</code>
-											</p>
-											<p className="font-semibold text-[15px]">
-												{finding.title}
-											</p>
-											<p className="max-w-[68ch] whitespace-pre-wrap text-ink-2 leading-relaxed">
-												{finding.mechanism}
-											</p>
-										</li>
-									))}
-								</ul>
-							)}
-							{data.unverified_hypotheses.length > 0 && (
+				{(data) => {
+					const proposed = data.proposed_change;
+					const confirmed = data.confirmed_findings.length > 0;
+					const decided = data.decisions.length > 0;
+					const sections: Array<{
+						key: string;
+						title: string;
+						tone: Tone;
+						open?: boolean;
+						reached: boolean;
+						body: ReactNode;
+					}> = [
+						{
+							key: "issue",
+							title: "Reported issue",
+							tone: "done",
+							open: true,
+							reached: true,
+							body: (
+								<details className="text-sm">
+									<summary className="inline-flex cursor-pointer items-center gap-1.5 rounded text-ink-2 hover:text-ink">
+										<Chevron />
+										Original description
+									</summary>
+									<CodeBlock
+										text={data.original_issue.description}
+										className="mt-2"
+									/>
+								</details>
+							),
+						},
+						{
+							key: "repro",
+							title: "Reproduction",
+							tone: GENERIC_TONES[data.reproduction.baseline] ?? "neutral",
+							reached: true,
+							body: (
+								<div className="space-y-1.5 text-sm">
+									<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+										<StateBadge value={data.reproduction.baseline} size="sm" />
+										<span>{data.reproduction.label}</span>
+										{data.reproduction.reason && (
+											<code className="text-ink-2 text-xs">
+												{data.reproduction.reason}
+											</code>
+										)}
+									</p>
+									<p className="max-w-[68ch] text-ink-2 leading-relaxed">
+										{data.reproduction.summary}
+									</p>
+								</div>
+							),
+						},
+						{
+							key: "cause",
+							title: "Root cause",
+							tone: confirmed ? "good" : "uncertain",
+							open: !confirmed,
+							reached: confirmed,
+							body: (
 								<>
-									<h3 className="mt-6 font-semibold text-sm">
-										Unverified hypotheses
-									</h3>
-									<ul className="mt-2 space-y-2 text-sm">
-										{data.unverified_hypotheses.map((hypothesis) => (
-											<li
-												key={hypothesis.handle}
-												className="grid gap-x-3 sm:grid-cols-[3.5rem_minmax(0,1fr)]"
-											>
-												<code className="text-ink-3 text-xs">
-													{hypothesis.handle}
-												</code>
-												<span>
-													{hypothesis.title}
-													<span className="block text-ink-3 text-xs">
-														{hypothesis.label}, {hypothesis.confidence}{" "}
-														confidence
-													</span>
-												</span>
-											</li>
-										))}
-									</ul>
+									{confirmed ? (
+										<ul className="space-y-4 text-sm">
+											{data.confirmed_findings.map((finding) => (
+												<li key={finding.handle} className="space-y-1">
+													<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+														<Status tone="good">Confirmed</Status>
+														<code className="text-ink-3 text-xs">
+															{finding.handle}
+														</code>
+													</p>
+													<p className="font-semibold text-[15px]">
+														{finding.title}
+													</p>
+													<p className="max-w-[68ch] whitespace-pre-wrap text-ink-2 leading-relaxed">
+														{finding.mechanism}
+													</p>
+												</li>
+											))}
+										</ul>
+									) : (
+										<p className="text-sm">
+											No finding was confirmed by verification.
+										</p>
+									)}
+									{data.unverified_hypotheses.length > 0 && (
+										<>
+											<h3 className="mt-6 font-semibold text-sm">
+												Unverified hypotheses
+											</h3>
+											<ul className="mt-2 space-y-2 text-sm">
+												{data.unverified_hypotheses.map((hypothesis) => (
+													<li
+														key={hypothesis.handle}
+														className="grid gap-x-3 sm:grid-cols-[3.5rem_minmax(0,1fr)]"
+													>
+														<code className="text-ink-3 text-xs">
+															{hypothesis.handle}
+														</code>
+														<span>
+															{hypothesis.title}
+															<span className="block text-ink-3 text-xs">
+																{hypothesis.label}, {hypothesis.confidence}{" "}
+																confidence
+															</span>
+														</span>
+													</li>
+												))}
+											</ul>
+										</>
+									)}
 								</>
-							)}
-						</Section>
-						<Section title="Proposed change" id="r-change">
-							{data.proposed_change ? (
+							),
+						},
+						{
+							key: "change",
+							title: "Proposed change",
+							tone: proposed
+								? (GENERIC_TONES[proposed.status] ?? "neutral")
+								: "neutral",
+							open: !proposed || proposed.status === "proposed",
+							reached: proposed !== null,
+							body: proposed ? (
 								<div className="space-y-2 text-sm">
 									<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-										<StateBadge value={data.proposed_change.status} />
+										<StateBadge value={proposed.status} />
 										<Link
-											to={`/investigations/${investigationId}/patches/${data.proposed_change.patch_id}`}
+											to={`/investigations/${investigationId}/patches/${proposed.patch_id}`}
 											className={`${linkClass} font-medium`}
 										>
-											{data.proposed_change.summary}
+											{proposed.summary}
 										</Link>
 									</p>
 									<ul className="space-y-0.5">
-										{data.proposed_change.files.map((file) => (
+										{proposed.files.map((file) => (
 											<li key={file.path}>
 												<code className="break-all text-ink-2 text-xs">
 													{file.path}
@@ -997,9 +1045,9 @@ export function ReportPage() {
 											</li>
 										))}
 									</ul>
-									{data.proposed_change.risks.length > 0 && (
-										<ul className="space-y-1 pt-1">
-											{data.proposed_change.risks.map((risk) => (
+									{proposed.risks.length > 0 && (
+										<ul className="space-y-1.5 pt-1">
+											{proposed.risks.map((risk) => (
 												<li key={risk.code} className="flex gap-2.5">
 													<Glyph tone="warn" className="mt-1.5" />
 													<span>
@@ -1013,35 +1061,57 @@ export function ReportPage() {
 								</div>
 							) : (
 								<p className="text-sm">No patch was proposed.</p>
-							)}
-						</Section>
-						<Section title="Verification" id="r-verification">
-							<div className="space-y-4">
-								{data.verification.reasons.length > 0 && (
-									<ul className="space-y-1">
-										{data.verification.reasons.map((reason) => (
-											<li key={reason} className="flex items-center gap-2">
-												<Glyph tone="warn" />
-												<code className="text-xs">{reason}</code>
-											</li>
-										))}
-									</ul>
-								)}
-								<Checks checks={data.verification.checks} />
-								{data.verification.environment ? (
-									<Environment environment={data.verification.environment} />
-								) : (
-									<p className="text-ink-3 text-xs">
-										The verification environment was not recorded.
-									</p>
-								)}
-							</div>
-						</Section>
-						<Section title="Decisions" id="r-decisions">
-							{data.decisions.length === 0 ? (
-								<p className="text-sm">No human decision has been recorded.</p>
-							) : (
-								<ul className="space-y-2 text-sm">
+							),
+						},
+						{
+							key: "verification",
+							title: "Verification",
+							tone: outcomeTone(data.verification.outcome),
+							reached: true,
+							body: (
+								<div className="space-y-6">
+									{data.verification.reasons.length > 0 && (
+										<div>
+											<h3 className="font-semibold text-sm">
+												Why not fully verified
+											</h3>
+											<ul className="mt-2 space-y-1.5">
+												{data.verification.reasons.map((reason) => (
+													<li key={reason} className="flex items-center gap-2">
+														<Glyph tone="warn" />
+														<code className="text-xs">{reason}</code>
+													</li>
+												))}
+											</ul>
+										</div>
+									)}
+									<div>
+										<h3 className="mb-2 font-semibold text-sm">Checks</h3>
+										<Checks checks={data.verification.checks} />
+									</div>
+									<div>
+										<h3 className="mb-2 font-semibold text-sm">Environment</h3>
+										{data.verification.environment ? (
+											<Environment
+												environment={data.verification.environment}
+											/>
+										) : (
+											<p className="text-ink-3 text-xs">
+												The verification environment was not recorded.
+											</p>
+										)}
+									</div>
+								</div>
+							),
+						},
+						{
+							key: "decisions",
+							title: "Decisions",
+							tone: decided ? "decision" : "neutral",
+							open: !decided,
+							reached: decided,
+							body: decided ? (
+								<ul className="space-y-3 text-sm">
 									{data.decisions.map((decision) => (
 										<li key={`${decision.at}:${decision.decision}`}>
 											<p className="flex flex-wrap items-center gap-x-3">
@@ -1058,26 +1128,95 @@ export function ReportPage() {
 										</li>
 									))}
 								</ul>
-							)}
-						</Section>
-						<Section title="Next step" id="r-next">
-							<p className="max-w-[68ch] text-sm leading-relaxed">
-								{data.recommended_next_step}
-							</p>
-							<Limitations items={data.limitations} />
-						</Section>
-						<details className="mt-10 text-sm">
-							<summary className="inline-flex cursor-pointer items-center gap-1.5 rounded text-ink-2 hover:text-ink">
-								<Chevron />
-								Original description
-							</summary>
-							<CodeBlock
-								text={data.original_issue.description}
-								className="mt-2"
+							) : (
+								<p className="text-sm">No human decision has been recorded.</p>
+							),
+						},
+						{
+							key: "next",
+							title: "Next step",
+							tone: "neutral",
+							open: true,
+							reached: false,
+							body: (
+								<>
+									<p className="max-w-[68ch] text-sm leading-relaxed">
+										{data.recommended_next_step}
+									</p>
+									<Limitations items={data.limitations} />
+								</>
+							),
+						},
+					];
+					const stops: TimelineStop[] = sections.map((section, index) => ({
+						key: section.key,
+						label: section.title,
+						tone: section.tone,
+						open: section.open,
+						reached: section.reached,
+						body: (
+							<ReportSection
+								id={`r-${section.key}`}
+								title={section.title}
+								last={index === sections.length - 1}
+							>
+								{section.body}
+							</ReportSection>
+						),
+					}));
+					return (
+						<article>
+							<title>{`Report · ${data.original_issue.title} · Tracera`}</title>
+							<div className="mt-3">
+								<PageHeader
+									title={data.original_issue.title}
+									actions={
+										<a
+											href={`/api/v1/investigations/${investigationId}/report?format=markdown`}
+											className={buttonClass}
+										>
+											Download Markdown
+										</a>
+									}
+								>
+									<div className="mt-3">
+										<OutcomeBadge
+											outcome={data.verification.outcome}
+											label={data.verification.label}
+											size="sm"
+										/>
+									</div>
+								</PageHeader>
+							</div>
+							<Facts
+								className="mt-6"
+								items={[
+									["Version", data.version],
+									["Written", <Time key="written" iso={data.created_at} />],
+									["Assembled by", humanize(data.generated_with.method)],
+									[
+										"Inference",
+										<span
+											key="inference"
+											className="flex flex-wrap items-center gap-2"
+										>
+											<InferenceLabel
+												mock={data.generated_with.mock}
+												detail={
+													data.generated_with.models.join(", ") || undefined
+												}
+											/>
+											{data.generated_with.placeholder_provider && (
+												<Status tone="warn">Placeholder provider</Status>
+											)}
+										</span>,
+									],
+								]}
 							/>
-						</details>
-					</article>
-				)}
+							<Timeline className="mt-10 max-w-3xl" stops={stops} />
+						</article>
+					);
+				}}
 			</QueryView>
 		</>
 	);

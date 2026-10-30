@@ -18,6 +18,7 @@ import {
 	inputClass,
 	labelClass,
 	linkClass,
+	Notice,
 	OutcomeBadge,
 	primaryButtonClass,
 	QueryView,
@@ -136,7 +137,7 @@ function Actions({
 							<label className="flex items-start gap-2.5">
 								<input
 									type="checkbox"
-									className="mt-0.5 size-4 shrink-0 accent-accent"
+									className="mt-0.5 size-4 shrink-0"
 									checked={acknowledged}
 									onChange={(event) => setAcknowledged(event.target.checked)}
 								/>
@@ -232,7 +233,7 @@ function Step({
 			{confirming ? (
 				<fieldset className="space-y-2">
 					<legend className="sr-only">Confirm: {title}</legend>
-					<p className="border-warning/60 border-l-2 pl-3">{confirm}</p>
+					<Notice tone="warn" title={confirm} />
 					<div className="flex flex-wrap gap-2">
 						<button
 							type="button"

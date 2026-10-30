@@ -1,69 +1,89 @@
 @import "tailwindcss";
 
 /*
- * Tracera's design tokens. The official palette is the source of truth; every
- * other color is derived from it or is a semantic status color. Components use the Tailwind utilities
- * mapped below (bg-surface, text-ink-2, border-line, bg-primary, text-success, ...), never raw hex.
+ * Design plan
  *
- * Roles: the darkest colors are the canvas; the blues are structure (the shell, rules, the workflow
- * rail, graph lines, hover and selected rows); orchid pink marks the current or selected thing and
- * keyboard focus; deep magenta is the one primary action on a screen.
+ * Palette. A white canvas with warm off-white planes, like paper. The sidebar takes the warmest
+ * tint; documents (code, diffs, logs, forms) sit on a slightly deeper plane; everything else stays
+ * on the white between hairlines. Ink is a warm near-black, never blue-grey. Orange is the one
+ * brand color: bright orange for markers, rings, and the traced line, the deeper orange for fills
+ * that carry white text, and the burnt orange for orange text. Green only means passed or verified.
+ * Ochre is attention, crimson is failure, plum marks what is only inferred, teal is a recorded
+ * observation. A status always comes with a shape and a word, never color alone.
  *
- * Meaning is not decoration: green only means passed or verified; amber is attention; red is failure
- * or blocking; violet marks uncertain or unsupported content; blue is information and work in flight.
+ * Type. IBM Plex Sans for everything people read: 600 for titles, 500 for emphasis, 400 for text.
+ * IBM Plex Mono only for what gets copied: code, diffs, handles, IDs, hashes, paths. Numbers that
+ * line up (counts, durations, line numbers, times) use tabular figures.
+ *
+ * Signature. The certainty trace, drawn like an orange thread through the case file. One line runs
+ * through an investigation, and its style says how much is established: solid means a recorded fact
+ * stands behind it, dashed means something is asserted or still running, dotted means nothing is
+ * established yet. It starts at an open node (the symptom as reported) and ends in a filled node
+ * only when a stored outcome says so. The same vocabulary draws the stage rail, the mini traces in
+ * lists, and the borders of hypotheses.
+ *
+ * Quiet around it. Hairlines instead of boxes, one raised plane for documents, no shadows except on
+ * menus, radii that follow role (small for chips, medium for controls, large for documents), and
+ * orange used sparingly.
+ *
+ * Motion. Responses to input only (press, hover, disclosure, menu), each under 200 ms, plus the
+ * trace extending when new work lands and once on the sign-in page. Reduced motion removes all of it.
+ *
+ * Components use the Tailwind utilities mapped below (bg-surface, text-ink-2, border-line,
+ * bg-primary, text-success, ...), never raw hex. Tertiary text (--text-muted) meets AA on the
+ * canvas, the sidebar, and every plane except the pressed state of a hovered row.
  */
 :root {
-	color-scheme: dark;
+	color-scheme: light;
 
-	/* Official brand palette */
-	--brand-pink: #c46ea1;
-	--brand-magenta: #9c2968;
-	--brand-plum: #5b1343;
-	--midnight-black: #00050d;
-	--midnight-indigo: #18203c;
-	--deep-ocean: #133c5a;
-	--steel-blue: #22587f;
+	/* Surfaces. Most content sits on the white canvas; --surface is the plane for documents (code,
+	   diffs, logs, forms), --surface-elevated for menus and neutral badges. */
+	--background: #ffffff;
+	--sidebar: #faf6f2;
+	--surface: #fbf8f5;
+	--surface-elevated: #f4eee8;
+	--surface-interactive: #f0e7df;
 
-	/* Application surfaces. Most content sits on the canvas; --surface is the plane for documents
-	   (code, diffs, logs, forms), --surface-elevated for the shell and menus. */
-	--background: #00050d;
-	--sidebar: #18203c;
-	--surface: #0a1121;
-	--surface-elevated: #18203c;
-	--surface-interactive: #133c5a;
-	--border: #1e2943;
-	--border-strong: #34476a;
+	/* Rules and structure. The edge of an input needs more contrast than a decorative rule does. */
+	--border: #e7ddd3;
+	--border-strong: #d4c6b9;
+	--control-border: #9c8b7e;
 
-	/* The workflow rail and graph lines: steel blue, with a lighter step for completed nodes. */
-	--trace: #22587f;
-	--trace-done: #5d93c2;
+	/* The trace: dotted lines where nothing is established, neutral finished nodes, and the orange
+	   that clears 3:1 on every plane for the line a recorded fact stands behind. */
+	--trace: #c0b2a4;
+	--trace-done: var(--text-secondary);
+	--trace-reached: #ea580c;
 
-	/* Typography (on --background: primary 18:1, secondary 11:1, muted 6.6:1) */
-	--text-primary: #f2f0f5;
-	--text-secondary: #b7c0d1;
-	--text-muted: #8996ad;
+	/* Typography: warm ink */
+	--text-primary: #1c1410;
+	--text-secondary: #5c4f46;
+	--text-muted: #766759;
 
-	/* Brand interactions. The hover is a step toward orchid pink: white text keeps 5.6:1 on it, where it
-	   would drop to 3.4:1 on #C46EA1 itself. */
-	--primary: var(--brand-magenta);
-	--primary-hover: #b03a7b;
+	/* Brand. The wash tints the current navigation item and highlighted lines. */
+	--accent: #ff6b35;
+	--accent-hover: #ea580c;
+	--accent-wash: #fff1e8;
+	--primary: #cf4308;
+	--primary-hover: #b93a06;
 	--primary-foreground: #ffffff;
-	--accent: var(--brand-pink);
-	--link: #6fa8d6;
-	--focus-ring: var(--brand-pink);
+	--link: #c2410c;
+	/* The deeper orange: a focus ring needs 3:1 against the page, which the bright one does not give. */
+	--focus-ring: var(--primary);
 
-	/* Semantic status colors: system meaning only */
-	--success: #4ade80;
-	--warning: #fbbf24;
-	--error: #f87171;
-	--info: #60a5fa;
-	--uncertain: #a78bfa;
+	/* Semantic status colors: system meaning only. Each is far enough from the orange family to read
+	   as its own color next to a link, and each clears AA on every plane. */
+	--success: #1f7a3a;
+	--warning: #866000;
+	--error: #b8193a;
+	--info: #0f766e;
+	--uncertain: #86379a;
 
-	/* Diffs: tinted backgrounds with light text */
-	--diff-add-bg: rgb(74 222 128 / 0.12);
-	--diff-add-fg: #c6f6d5;
-	--diff-del-bg: rgb(248 113 113 / 0.13);
-	--diff-del-fg: #fecaca;
+	/* Diffs: tinted backgrounds with dark text. */
+	--diff-add-bg: rgb(31 122 58 / 0.1);
+	--diff-add-fg: #14532d;
+	--diff-del-bg: rgb(184 25 58 / 0.09);
+	--diff-del-fg: #7f1d1d;
 }
 
 /* IBM Plex, self-hosted (main.tsx): an engineering face whose mono tells 0/O and 1/l apart in SHAs,
@@ -74,15 +94,25 @@
 	--font-mono:
 		"IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
 
+	/* Radius follows role: chips and inline code, controls, documents and menus. */
+	--radius-sm: 3px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	--radius-xl: 10px;
+
+	/* Stronger curves than the built-in ones: a response should start fast. */
+	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
 	/* The one ambient motion: a stage or job the worker is running right now. */
 	--animate-live: live 1.8s ease-in-out infinite;
 	@keyframes live {
 		0%,
 		100% {
-			box-shadow: 0 0 0 0 rgb(96 165 250 / 0.55);
+			box-shadow: 0 0 0 0 rgb(255 107 53 / 0.55);
 		}
 		60% {
-			box-shadow: 0 0 0 5px rgb(96 165 250 / 0);
+			box-shadow: 0 0 0 5px rgb(255 107 53 / 0);
 		}
 	}
 }
@@ -95,8 +125,10 @@
 	--color-interactive: var(--surface-interactive);
 	--color-line: var(--border);
 	--color-line-strong: var(--border-strong);
+	--color-control: var(--control-border);
 	--color-trace: var(--trace);
 	--color-trace-done: var(--trace-done);
+	--color-trace-reached: var(--trace-reached);
 	--color-ink: var(--text-primary);
 	--color-ink-2: var(--text-secondary);
 	--color-ink-3: var(--text-muted);
@@ -104,9 +136,8 @@
 	--color-primary-hover: var(--primary-hover);
 	--color-on-primary: var(--primary-foreground);
 	--color-accent: var(--accent);
-	--color-plum: var(--brand-plum);
-	--color-ocean: var(--deep-ocean);
-	--color-steel: var(--steel-blue);
+	--color-accent-hover: var(--accent-hover);
+	--color-wash: var(--accent-wash);
 	--color-link: var(--link);
 	--color-success: var(--success);
 	--color-warning: var(--warning);
@@ -117,31 +148,71 @@
 	--color-diff-add-fg: var(--diff-add-fg);
 	--color-diff-del: var(--diff-del-bg);
 	--color-diff-del-fg: var(--diff-del-fg);
+
+	/* Names from the previous palette keep resolving for screens that still use them. Prefer wash,
+	   interactive, and line-strong in new code. */
+	--color-plum: var(--accent-wash);
+	--color-ocean: var(--surface-interactive);
+	--color-steel: var(--border-strong);
 }
 
 /* In the base layer so utilities (for example outline-none on <main>) can override it. */
 @layer base {
-	/* In-page links (evidence citations) land below the sticky shell. */
+	/* In-page links (evidence citations, the trace strip) land below the sticky top bar. */
 	html {
 		scroll-padding-top: 4.5rem;
+		scrollbar-width: thin;
+		scrollbar-color: var(--border-strong) transparent;
 	}
 
 	body {
 		background-color: var(--background);
 		color: var(--text-primary);
 		font-family: var(--font-sans);
+		font-size: 0.875rem;
+		line-height: 1.55;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		text-rendering: optimizeLegibility;
 	}
 
-	/* One visible focus style for every focusable element (orchid pink, 5.8:1 on the canvas). */
+	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+
+	p,
+	li {
+		text-wrap: pretty;
+	}
+
+	/* Figures that line up wherever a number is read against another. */
+	table,
+	time,
+	dd,
+	progress {
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* One visible focus style for every focusable element. */
 	:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
 
+	/* Inner scroll areas (code, diffs, tables) get the same thin bar as the page. */
+	* {
+		scrollbar-width: thin;
+	}
+
+	input,
+	textarea {
+		caret-color: var(--primary);
+	}
+
 	::selection {
-		background-color: var(--brand-plum);
+		background-color: rgb(255 107 53 / 0.3);
 		color: var(--text-primary);
 	}
 
@@ -162,5 +233,186 @@
 	samp,
 	pre {
 		font-family: var(--font-mono);
+	}
+
+	/* Native controls take the brand color, and selects draw one chevron of their own. */
+	input[type="checkbox"],
+	input[type="radio"] {
+		accent-color: var(--primary);
+	}
+
+	/* Progress is drawn rather than left to the browser: a rounded bar filled with the traced orange,
+	   and dashes, the trace's mark for work in flight, when there is nothing to count. */
+	progress {
+		appearance: none;
+		border: 0;
+		border-radius: 999px;
+		background: var(--border);
+		overflow: hidden;
+	}
+	progress::-webkit-progress-bar {
+		background: var(--border);
+	}
+	progress::-webkit-progress-value {
+		background: var(--trace-reached);
+		border-radius: 999px;
+		transition: width 300ms var(--ease-out);
+	}
+	progress::-moz-progress-bar {
+		background: var(--trace-reached);
+		border-radius: 999px;
+	}
+	progress:indeterminate {
+		background: repeating-linear-gradient(
+			90deg,
+			var(--trace-reached) 0 6px,
+			var(--border) 6px 10px
+		);
+	}
+
+	select {
+		appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23766759' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0.65rem center;
+		background-size: 0.75rem;
+		padding-right: 2rem;
+	}
+}
+
+@layer components {
+	/*
+	 * The trace. A segment is a dotted line that is always there (nothing established); its ::after is
+	 * the established part, drawn over it: solid for a recorded fact, dashed for work in flight. When
+	 * a segment's state changes while it is on screen, the established line extends instead of
+	 * snapping. A segment first rendered already established simply appears, so reopening a page
+	 * never replays motion.
+	 */
+	.trace-seg {
+		position: absolute;
+		pointer-events: none;
+	}
+	.trace-seg[data-axis="h"] {
+		height: 2px;
+		background: repeating-linear-gradient(
+			90deg,
+			var(--trace) 0 2px,
+			transparent 2px 6px
+		);
+	}
+	.trace-seg[data-axis="v"] {
+		width: 2px;
+		background: repeating-linear-gradient(
+			180deg,
+			var(--trace) 0 2px,
+			transparent 2px 6px
+		);
+	}
+	.trace-seg::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		transition: clip-path 600ms var(--ease-out);
+	}
+	.trace-seg[data-axis="h"]::after {
+		clip-path: inset(0 100% 0 0);
+	}
+	.trace-seg[data-axis="v"]::after {
+		clip-path: inset(0 0 100% 0);
+	}
+	.trace-seg[data-line="solid"]::after {
+		background: var(--trace-reached);
+		clip-path: inset(0);
+	}
+	.trace-seg[data-axis="h"][data-line="dashed"]::after {
+		background: repeating-linear-gradient(
+			90deg,
+			var(--trace-reached) 0 6px,
+			transparent 6px 10px
+		);
+		clip-path: inset(0);
+	}
+	.trace-seg[data-axis="v"][data-line="dashed"]::after {
+		background: repeating-linear-gradient(
+			180deg,
+			var(--trace-reached) 0 6px,
+			transparent 6px 10px
+		);
+		clip-path: inset(0);
+	}
+
+	/* The sign-in page draws its trace once, node by node. --i is each stop's position. */
+	@keyframes trace-reveal-h {
+		from {
+			clip-path: inset(0 100% 0 0);
+		}
+		to {
+			clip-path: inset(0);
+		}
+	}
+	@keyframes trace-reveal-v {
+		from {
+			clip-path: inset(0 0 100% 0);
+		}
+		to {
+			clip-path: inset(0);
+		}
+	}
+	@keyframes trace-node-in {
+		from {
+			opacity: 0;
+			transform: scale(0.8);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	.trace-intro .trace-seg[data-axis="h"]::after {
+		animation: trace-reveal-h 520ms var(--ease-out) both;
+		animation-delay: calc(var(--i, 0) * 140ms + 100ms);
+	}
+	.trace-intro .trace-seg[data-axis="v"]::after {
+		animation: trace-reveal-v 520ms var(--ease-out) both;
+		animation-delay: calc(var(--i, 0) * 140ms + 100ms);
+	}
+	.trace-intro .trace-node {
+		animation: trace-node-in 220ms var(--ease-out) both;
+		animation-delay: calc(var(--i, 0) * 140ms);
+	}
+
+	/* The account menu grows out of its button. Display and overlay are transitioned too, so the menu
+	   stays on screen for its exit. */
+	#account-menu {
+		transform-origin: top right;
+		opacity: 0;
+		transform: translateY(-4px) scale(0.97);
+		transition:
+			opacity 150ms var(--ease-out),
+			transform 150ms var(--ease-out),
+			display 150ms allow-discrete,
+			overlay 150ms allow-discrete;
+	}
+	#account-menu:popover-open {
+		opacity: 1;
+		transform: none;
+		@starting-style {
+			opacity: 0;
+			transform: translateY(-4px) scale(0.97);
+		}
+	}
+}
+
+/* Reduced motion removes transitions and animation everywhere, not only where a utility opts in. It
+   sits outside the cascade layers on purpose: unlayered rules beat every utility without !important. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	::before,
+	::after {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		animation-delay: 0s;
+		transition-duration: 0.01ms;
+		scroll-behavior: auto;
 	}
 }

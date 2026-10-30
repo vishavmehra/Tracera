@@ -37,6 +37,7 @@ import {
 	elapsed,
 	Facts,
 	formatDuration,
+	GENERIC_TONES,
 	Glyph,
 	hintClass,
 	humanize,
@@ -45,7 +46,10 @@ import {
 	labelClass,
 	linkClass,
 	location,
+	Notice,
 	OutcomeBadge,
+	outcomeTone,
+	PageHeader,
 	primaryButtonClass,
 	QueryView,
 	quietButtonClass,
@@ -53,8 +57,17 @@ import {
 	Sha,
 	StateBadge,
 	Status,
+	Table,
 	Time,
+	Timeline,
+	type TimelineStop,
+	TONE_TEXT,
 	type Tone,
+	TraceNode,
+	type TraceStop,
+	TraceStrip,
+	tdClass,
+	thClass,
 } from "./ui.tsx";
 import {
 	ScreenshotEvidence,
@@ -553,51 +566,22 @@ const STEP_TONES: Record<StepStatus, Tone> = {
 	cancelled: "neutral",
 };
 
-const STEP_TEXT: Record<Tone, string> = {
-	neutral: "text-ink-3",
-	done: "text-ink-2",
-	info: "text-info",
-	progress: "text-info",
-	good: "text-success",
-	warn: "text-warning",
-	bad: "text-error",
-	uncertain: "text-uncertain",
-	decision: "text-accent",
-};
+/** A stored fact about the stage, whatever it says: the line into the stage is solid. */
+const RECORDED_STEPS: ReadonlySet<StepStatus> = new Set([
+	"succeeded",
+	"failed",
+	"blocked",
+	"skipped",
+	"cancelled",
+]);
 
-/** A stage's node on the rail: its shape says what happened, independent of color. */
-function StageNode({
-	status,
-	current,
-}: {
-	status: StepStatus | null;
-	current: boolean;
-}) {
-	const shape =
-		status === null
-			? "size-1.5 rounded-full bg-line-strong"
-			: status === "succeeded"
-				? "size-2.5 rounded-full bg-trace-done"
-				: status === "running"
-					? "size-2.5 rounded-full border-2 border-info bg-canvas motion-safe:animate-live"
-					: status === "failed"
-						? "size-2.5 rounded-[2px] bg-error"
-						: status === "blocked"
-							? "size-3 bg-warning [clip-path:polygon(50%_0,100%_100%,0_100%)]"
-							: status === "skipped"
-								? "size-2.5 rounded-full border-[1.5px] border-ink-3 border-dashed bg-canvas"
-								: "size-2.5 rounded-full border-[1.5px] border-ink-3 bg-canvas";
-	return (
-		<span
-			aria-hidden="true"
-			className="relative grid size-4 shrink-0 place-items-center"
-		>
-			<span
-				className={`${shape} ring-[3px] ring-canvas ${current ? "outline-2 outline-accent outline-offset-[3px]" : ""}`}
-			/>
-		</span>
-	);
-}
+/** Statuses that settle nothing about the stage: its node stays hollow. */
+const UNSETTLED_STEPS: ReadonlySet<StepStatus> = new Set([
+	"pending",
+	"running",
+	"skipped",
+	"cancelled",
+]);
 
 function stepsByStage(steps: Step[]) {
 	const byStage = new Map<InvestigationStage, Step[]>();
@@ -632,189 +616,204 @@ function StageTiming({ step }: { step: Step }) {
 	);
 }
 
-function StageRow({
-	stage,
-	steps,
-	current,
-}: {
-	stage: InvestigationStage;
-	steps: Step[];
-	current: boolean;
-}) {
+/** One worker stage as a stop on the timeline, from what the server stored for it. */
+function stageStop(
+	stage: InvestigationStage,
+	steps: Step[],
+	current: boolean,
+	running: boolean,
+): TimelineStop {
+	const name = humanize(stage);
 	const latest = steps.at(-1);
 	if (!latest)
-		return (
-			<li className="flex items-center gap-3 py-1.5 text-ink-3 text-sm">
-				<StageNode status={null} current={false} />
-				<span className="min-w-0 flex-1">{humanize(stage)}</span>
-				<span className="text-xs">No record</span>
-			</li>
-		);
+		return {
+			key: stage,
+			label: name,
+			tone: "neutral",
+			reached: false,
+			body: (
+				<div className="flex items-baseline gap-3 py-1.5 text-ink-3 text-sm">
+					<span className="min-w-0 flex-1">{name}</span>
+					<span className="text-xs">No record</span>
+				</div>
+			),
+		};
 	const tone = STEP_TONES[latest.status];
 	const ms = elapsed(latest.started_at, latest.finished_at);
 	const roles = latest.specialists ?? [];
-	return (
-		<li aria-current={current ? "step" : undefined}>
-			<details>
-				<summary className="-mx-1.5 flex cursor-pointer items-start gap-3 rounded px-1.5 py-1.5 text-sm hover:bg-interactive/30">
-					<span className="mt-0.5">
-						<StageNode status={latest.status} current={current} />
-					</span>
-					<span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-						<span className={current ? "font-semibold text-ink" : "text-ink"}>
-							{humanize(stage)}
+	return {
+		key: stage,
+		label: name,
+		tone,
+		reached: RECORDED_STEPS.has(latest.status),
+		open: UNSETTLED_STEPS.has(latest.status),
+		pending: latest.status === "running",
+		live: running && latest.status === "running",
+		current,
+		body: (
+			<>
+				<details>
+					<summary className="-mx-1.5 flex cursor-pointer items-baseline gap-2 rounded px-1.5 py-1.5 text-sm transition-colors duration-150 hover:bg-elevated">
+						<span className={current ? "font-semibold" : "font-medium"}>
+							{name}
 						</span>
 						{latest.status === "succeeded" ? (
 							<span className="sr-only">Succeeded</span>
 						) : (
-							<span className={`font-medium text-xs ${STEP_TEXT[tone]}`}>
+							<span className={`font-medium text-xs ${TONE_TEXT[tone]}`}>
 								{humanize(latest.status)}
 							</span>
 						)}
-					</span>
-					{ms !== null && (
-						<span className="pt-px text-ink-3 text-xs tabular-nums">
-							{formatDuration(ms)}
-						</span>
-					)}
-					<Chevron className="mt-1" />
-				</summary>
-				<div className="space-y-1 pt-0.5 pb-2 pl-7 text-ink-3 text-xs">
-					<p>
-						<StageTiming step={latest} />
-					</p>
-					{roles.length > 0 && (
-						<p>
-							Roles:{" "}
-							<span className="text-ink-2">
-								{roles.map((role) => humanize(role)).join(", ")}
+						<span className="flex-1" />
+						{ms !== null && (
+							<span className="text-ink-3 text-xs tabular-nums">
+								{formatDuration(ms)}
 							</span>
-						</p>
-					)}
-					{steps.length > 1 && (
-						<ol className="space-y-0.5">
-							{steps.map((step) => (
-								<li key={step.attempt}>
-									Attempt {step.attempt}: {humanize(step.status)}
-									{step.error && (
-										<>
-											{" "}
-											(<code>{step.error.code}</code>)
-										</>
-									)}
-								</li>
-							))}
-						</ol>
-					)}
-				</div>
-			</details>
-			{latest.error && (
-				<p className="break-words pb-1.5 pl-7 text-error text-xs">
-					<code>{latest.error.code}</code>: {latest.error.message}
-				</p>
-			)}
-		</li>
-	);
-}
-
-/**
- * Where the trace ends now, drawn like the brand mark's end node: a filled orchid node once the
- * investigation completed, the human-wait or failure shape otherwise, and an open node while running.
- */
-function OutcomeNode({ status }: { status: InvestigationStatus }) {
-	const shape =
-		status === "completed"
-			? "size-3 rounded-full bg-accent"
-			: status === "failed"
-				? "size-2.5 rounded-[2px] bg-error"
-				: status === "awaiting_approval"
-					? "size-2.5 rotate-45 bg-accent"
-					: status === "needs_input"
-						? "size-3 bg-warning [clip-path:polygon(50%_0,100%_100%,0_100%)]"
-						: status === "cancelled"
-							? "size-2.5 rounded-full border-[1.5px] border-ink-3 bg-canvas"
-							: "size-2.5 rounded-full border-[1.5px] border-info border-dashed bg-canvas";
-	return (
-		<span
-			aria-hidden="true"
-			className="grid size-4 shrink-0 place-items-center"
-		>
-			<span className={`${shape} ring-[3px] ring-canvas`} />
-		</span>
-	);
-}
-
-/** Every canonical stage in order, with what the server stored for it; nothing is inferred. */
-function Workflow({ investigation }: { investigation: Investigation }) {
-	const byStage = stepsByStage(investigation.steps);
-	const live = !TERMINAL.has(investigation.status);
-	const working = WORKING.has(investigation.status);
-	const message = progressMessage(investigation);
-	return (
-		<section aria-labelledby="workflow-heading">
-			<div className="flex items-baseline justify-between gap-3">
-				<h2 id="workflow-heading" className="font-semibold text-sm">
-					Workflow
-				</h2>
-				<p className="text-ink-3 text-xs tabular-nums">
-					{byStage.size} of {INVESTIGATION_STAGES.length} stages recorded
-				</p>
-			</div>
-			<ol className="relative mt-3 before:absolute before:top-3 before:bottom-4 before:left-[7.5px] before:w-px before:bg-trace">
-				<li className="flex items-center gap-3 py-1.5 text-sm">
-					<span
-						aria-hidden="true"
-						className="grid size-4 shrink-0 place-items-center"
-					>
-						<span className="size-2.5 rounded-full border-[1.5px] border-trace-done bg-canvas ring-[3px] ring-canvas" />
-					</span>
-					<span className="min-w-0 flex-1 text-ink-2">Opened</span>
-					<span className="text-ink-3 text-xs">
-						<Time iso={investigation.created_at} />
-					</span>
-				</li>
-				{INVESTIGATION_STAGES.map((stage) => (
-					<StageRow
-						key={stage}
-						stage={stage}
-						steps={byStage.get(stage) ?? []}
-						current={live && investigation.current_stage === stage}
-					/>
-				))}
-				<li className="flex items-start gap-3 py-1.5 text-sm">
-					<span className="mt-0.5">
-						<OutcomeNode status={investigation.status} />
-					</span>
-					<span className="min-w-0 flex-1">
-						<span className={working ? "text-ink-3" : "font-semibold"}>
-							{working ? "Not finished" : humanize(investigation.status)}
-						</span>
-						{!working && message && (
-							<span className="block text-ink-3 text-xs">{message}</span>
 						)}
+						<Chevron className="self-center" />
+					</summary>
+					<div className="space-y-1 pb-2 text-ink-3 text-xs">
+						<p>
+							<StageTiming step={latest} />
+						</p>
+						{roles.length > 0 && (
+							<p>
+								Roles:{" "}
+								<span className="text-ink-2">
+									{roles.map((role) => humanize(role)).join(", ")}
+								</span>
+							</p>
+						)}
+						{steps.length > 1 && (
+							<ol className="space-y-0.5">
+								{steps.map((step) => (
+									<li key={step.attempt}>
+										Attempt {step.attempt}: {humanize(step.status)}
+										{step.error && (
+											<>
+												{" "}
+												(<code>{step.error.code}</code>)
+											</>
+										)}
+									</li>
+								))}
+							</ol>
+						)}
+					</div>
+				</details>
+				{latest.error && (
+					<p className="break-words pb-1.5 text-error text-xs">
+						<code>{latest.error.code}</code>: {latest.error.message}
+					</p>
+				)}
+			</>
+		),
+	};
+}
+
+/** Where the work stands now, as the last stop: a stored outcome, or an open node while it runs. */
+function outcomeStop(
+	investigation: Investigation,
+	message: string | null,
+): TimelineStop {
+	const status = investigation.status;
+	const working = WORKING.has(status);
+	const tone: Tone =
+		status === "failed"
+			? "bad"
+			: status === "awaiting_approval"
+				? "decision"
+				: status === "needs_input"
+					? "warn"
+					: status === "completed"
+						? "done"
+						: "neutral";
+	return {
+		key: "outcome",
+		label: working ? "Not finished" : humanize(status),
+		tone,
+		reached: !working,
+		pending: working,
+		open: working || status === "cancelled",
+		body: (
+			<div className="py-1.5 text-sm">
+				<div className="flex items-baseline gap-3">
+					<span
+						className={`min-w-0 flex-1 ${working ? "text-ink-3" : "font-semibold"}`}
+					>
+						{working ? "Not finished" : humanize(status)}
 					</span>
 					{investigation.finished_at && (
 						<span className="text-ink-3 text-xs">
 							<Time iso={investigation.finished_at} />
 						</span>
 					)}
-				</li>
-			</ol>
+				</div>
+				{!working && message && (
+					<p className="mt-0.5 text-ink-3 text-xs">{message}</p>
+				)}
+			</div>
+		),
+	};
+}
+
+/** Every canonical stage in order, with what the server stored for it; nothing is inferred. */
+function Workflow({ investigation }: { investigation: Investigation }) {
+	const byStage = stepsByStage(investigation.steps);
+	const live = !TERMINAL.has(investigation.status);
+	const running = investigation.status === "running";
+	const stops: TimelineStop[] = [
+		{
+			key: "opened",
+			label: "Opened",
+			tone: "done",
+			open: true,
+			reached: true,
+			body: (
+				<div className="flex items-baseline gap-3 py-1.5 text-sm">
+					<span className="min-w-0 flex-1 text-ink-2">Opened</span>
+					<span className="text-ink-3 text-xs">
+						<Time iso={investigation.created_at} />
+					</span>
+				</div>
+			),
+		},
+		...INVESTIGATION_STAGES.map((stage) =>
+			stageStop(
+				stage,
+				byStage.get(stage) ?? [],
+				live && investigation.current_stage === stage,
+				running,
+			),
+		),
+		outcomeStop(investigation, progressMessage(investigation)),
+	];
+	return (
+		<Section
+			title="Workflow"
+			id="workflow-heading"
+			actions={
+				<span className="tabular-nums">
+					{byStage.size} of {INVESTIGATION_STAGES.length} stages recorded
+				</span>
+			}
+		>
+			<Timeline stops={stops} />
 			<p className="mt-3 text-ink-3 text-xs">
 				Stage records as stored, not a full event log.
 			</p>
-		</section>
+		</Section>
 	);
 }
 
 const CALL = /[A-Za-z_$][\w$.]*\((?:[^()\n]|\([^()\n]*\))*\)/g;
 
 /** Backtick spans and call expressions (`name(args)`) in reported text are set as code. */
-function withCode(text: string): ReactNode[] {
+export function withCode(text: string): ReactNode[] {
 	const code = (value: string, key: string) => (
 		<code
 			key={key}
-			className="rounded-sm bg-surface px-1 py-px text-[0.9em] text-ink"
+			className="rounded-sm bg-elevated px-1 py-px text-[0.9em] text-ink"
 		>
 			{value}
 		</code>
@@ -836,25 +835,24 @@ function withCode(text: string): ReactNode[] {
 
 type BugReport = Awaited<ReturnType<typeof getBugReport>>;
 
-/** The report as the reporter wrote it: the symptom, then expected against actual behavior. */
+/**
+ * The report as the reporter wrote it. What someone reported is not established, so it is set with
+ * the trace's dotted line; expected and actual behavior read side by side.
+ */
 function BugReportView({ report }: { report: BugReport }) {
+	const comparison = [
+		["Expected", report.expected_behavior],
+		["Actual", report.actual_behavior],
+	] as const;
 	return (
-		<div className="space-y-5">
-			<blockquote className="border-trace border-l-2 pl-4">
-				<p className="text-ink-3 text-xs">What happened</p>
-				<p className="mt-1 max-w-[68ch] whitespace-pre-wrap break-words text-[15px] leading-relaxed">
-					{withCode(report.description)}
-				</p>
+		<div className="space-y-6">
+			<blockquote className="max-w-[68ch] whitespace-pre-wrap break-words border-trace border-l-2 border-dotted pl-4 text-[15px] leading-relaxed">
+				{withCode(report.description)}
 			</blockquote>
 			{(report.expected_behavior || report.actual_behavior) && (
-				<dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-					{(
-						[
-							["Expected", report.expected_behavior],
-							["Actual", report.actual_behavior],
-						] as const
-					).map(([label, value]) => (
-						<div key={label} className="min-w-0 border-line border-l-2 pl-4">
+				<dl className="grid divide-line overflow-hidden rounded-lg border border-line bg-surface max-sm:divide-y sm:grid-cols-2 sm:divide-x">
+					{comparison.map(([label, value]) => (
+						<div key={label} className="min-w-0 p-4">
 							<dt className="text-ink-3 text-xs">{label}</dt>
 							<dd className="mt-1 whitespace-pre-wrap break-words">
 								{value ? (
@@ -870,7 +868,7 @@ function BugReportView({ report }: { report: BugReport }) {
 			{report.steps.length > 0 && (
 				<div>
 					<p className="text-ink-3 text-xs">Steps to reproduce</p>
-					<ol className="mt-1 list-decimal space-y-0.5 pl-5">
+					<ol className="mt-1.5 list-decimal space-y-0.5 pl-5">
 						{report.steps.map((step) => (
 							<li key={step}>{withCode(step)}</li>
 						))}
@@ -888,6 +886,21 @@ const HYPOTHESIS_TONES: Record<string, Tone> = {
 	confirmed: "good",
 	rejected: "neutral",
 };
+
+/** How much stands behind a hypothesis, drawn as the trace draws it: solid, dashed, or dotted. */
+const HYPOTHESIS_LINES: Record<string, "solid" | "dashed" | "dotted"> = {
+	confirmed: "solid",
+	supported: "solid",
+	proposed: "dashed",
+	contradicted: "dashed",
+	rejected: "dotted",
+};
+
+/** A model's proposal or a rejected one is not established, so its node stays hollow. */
+const HYPOTHESIS_HOLLOW: ReadonlySet<string> = new Set([
+	"proposed",
+	"rejected",
+]);
 
 type EvidenceItem = Findings["observed_facts"][number];
 type Cite = Findings["hypotheses"][number]["supporting"][number];
@@ -957,6 +970,15 @@ function citedLines(findings: Findings) {
 	return cited;
 }
 
+/** The mark for evidence a hypothesis relies on; orange text on the wash clears AA. */
+function CitedTag() {
+	return (
+		<span className="rounded-sm bg-wash px-1.5 py-px font-medium text-[11px] text-link leading-4">
+			Cited
+		</span>
+	);
+}
+
 /** A citation that opens the cited evidence below, marked with how that evidence was obtained. */
 function CiteLink({ cite, item }: { cite: Cite; item?: EvidenceItem }) {
 	const open = () => {
@@ -980,7 +1002,7 @@ function CiteLink({ cite, item }: { cite: Cite; item?: EvidenceItem }) {
 			href={`#${evidenceId(cite.handle)}`}
 			onClick={open}
 			title={`${humanize(item.basis)} evidence: ${item.label}`}
-			className={`${chip} hover:border-trace-done hover:bg-interactive/40`}
+			className={`${chip} transition-colors duration-150 hover:border-control hover:bg-surface`}
 		>
 			{content}
 		</a>
@@ -1012,88 +1034,108 @@ function CiteList({
 	);
 }
 
+/**
+ * Each hypothesis hangs from a node of its own. The node's shape and the line's style say how much
+ * stands behind it: a model's proposal is a hollow diamond on a dashed line, a confirmed cause a
+ * filled node on a solid one. The state word comes from the server.
+ */
 function Hypotheses({ findings }: { findings: Findings }) {
 	const index = evidenceIndex(findings);
 	return (
 		<div className="space-y-6">
 			{findings.insufficient_evidence && (
-				<p className="border-uncertain border-l-2 bg-uncertain/[0.06] py-2.5 pr-3 pl-3.5 text-sm">
-					<span className="font-medium text-uncertain">
-						Insufficient evidence for a hypothesis.
-					</span>{" "}
+				<Notice
+					tone="uncertain"
+					title="Insufficient evidence for a hypothesis."
+				>
 					{findings.insufficient_evidence.reason}
-				</p>
+				</Notice>
 			)}
 			{findings.hypotheses.length === 0 ? (
 				<Empty>No hypotheses yet.</Empty>
 			) : (
-				<ol className="space-y-8">
-					{findings.hypotheses.map((hypothesis) => (
-						<li
-							key={hypothesis.id}
-							className="grid gap-x-4 gap-y-2 sm:grid-cols-[3.5rem_minmax(0,1fr)]"
-						>
-							<code className="pt-0.5 text-ink-3 text-xs">
-								{hypothesis.handle}
-							</code>
-							<div className="min-w-0 space-y-3">
-								<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-									<Status
-										tone={HYPOTHESIS_TONES[hypothesis.state] ?? "neutral"}
-										title={hypothesis.state}
-									>
-										{hypothesis.label}
-									</Status>
-									<span className="text-ink-3 text-xs">
-										{humanize(hypothesis.confidence)} confidence
-									</span>
+				<ol className="space-y-9">
+					{findings.hypotheses.map((hypothesis) => {
+						const tone = HYPOTHESIS_TONES[hypothesis.state] ?? "neutral";
+						return (
+							<li
+								key={hypothesis.id}
+								className="relative grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3"
+							>
+								<span
+									aria-hidden="true"
+									data-axis="v"
+									data-line={HYPOTHESIS_LINES[hypothesis.state] ?? "dotted"}
+									className="trace-seg top-5 bottom-0 left-[7px]"
+								/>
+								<span className="mt-0.5">
+									<TraceNode
+										tone={tone}
+										open={HYPOTHESIS_HOLLOW.has(hypothesis.state)}
+									/>
+								</span>
+								<div className="min-w-0 space-y-3 pb-1">
+									<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+										<span
+											title={hypothesis.state}
+											className={`font-medium text-sm ${TONE_TEXT[tone]}`}
+										>
+											{hypothesis.label}
+										</span>
+										<code className="text-ink-3 text-xs">
+											{hypothesis.handle}
+										</code>
+										<span className="text-ink-3 text-xs">
+											{humanize(hypothesis.confidence)} confidence
+										</span>
+									</div>
+									<h3 className="font-semibold text-[15px] text-ink leading-snug">
+										{hypothesis.title}
+									</h3>
+									<p className="max-w-[68ch] whitespace-pre-wrap text-ink-2 leading-relaxed">
+										{withCode(hypothesis.mechanism)}
+									</p>
+									<dl className="grid gap-x-4 gap-y-2.5 text-sm sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+										{hypothesis.locations.length > 0 && (
+											<>
+												<dt className="text-ink-3">Located at</dt>
+												<dd className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+													{hypothesis.locations.map((cite) => (
+														<code
+															key={`${cite.handle}:${cite.start_line}`}
+															className="break-all text-xs"
+														>
+															{citeWhere(cite, index.get(cite.handle))}
+														</code>
+													))}
+												</dd>
+											</>
+										)}
+										<dt className="text-ink-3">Supported by</dt>
+										<dd className="min-w-0">
+											<CiteList
+												cites={hypothesis.supporting}
+												index={index}
+												none="No supporting evidence"
+											/>
+										</dd>
+										<dt className="text-ink-3">Contradicted by</dt>
+										<dd className="min-w-0">
+											<CiteList
+												cites={hypothesis.contradicting}
+												index={index}
+												none="Nothing recorded"
+											/>
+										</dd>
+										<dt className="text-ink-3">Next check</dt>
+										<dd className="min-w-0 max-w-[68ch]">
+											{withCode(hypothesis.next_check)}
+										</dd>
+									</dl>
 								</div>
-								<h3 className="font-semibold text-[15px] text-ink leading-snug">
-									{hypothesis.title}
-								</h3>
-								<p className="max-w-[68ch] whitespace-pre-wrap text-ink-2 leading-relaxed">
-									{hypothesis.mechanism}
-								</p>
-								<dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8.5rem_minmax(0,1fr)]">
-									{hypothesis.locations.length > 0 && (
-										<>
-											<dt className="text-ink-3">Located at</dt>
-											<dd className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-												{hypothesis.locations.map((cite) => (
-													<code
-														key={`${cite.handle}:${cite.start_line}`}
-														className="break-all text-xs"
-													>
-														{citeWhere(cite, index.get(cite.handle))}
-													</code>
-												))}
-											</dd>
-										</>
-									)}
-									<dt className="text-ink-3">Supported by</dt>
-									<dd className="min-w-0">
-										<CiteList
-											cites={hypothesis.supporting}
-											index={index}
-											none="No supporting evidence"
-										/>
-									</dd>
-									<dt className="text-ink-3">Contradicted by</dt>
-									<dd className="min-w-0">
-										<CiteList
-											cites={hypothesis.contradicting}
-											index={index}
-											none="Nothing recorded"
-										/>
-									</dd>
-									<dt className="text-ink-3">Next check</dt>
-									<dd className="min-w-0 max-w-[68ch]">
-										{hypothesis.next_check}
-									</dd>
-								</dl>
-							</div>
-						</li>
-					))}
+							</li>
+						);
+					})}
 				</ol>
 			)}
 			{findings.open_questions.length > 0 && (
@@ -1125,17 +1167,16 @@ function EvidenceList({ findings }: { findings: Findings }) {
 		return <Empty>No evidence has been collected yet.</Empty>;
 	const cited = citedLines(findings);
 	return (
-		<div className="space-y-6">
-			<ul className="flex flex-wrap gap-x-5 gap-y-1 text-ink-3 text-xs">
+		<div className="space-y-7">
+			<ul className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-ink-3 text-xs">
 				{BASIS_LEGEND.map(([basis, text]) => (
 					<li key={basis} className="inline-flex items-center gap-1.5">
 						<Glyph tone={BASIS_TONES[basis] ?? "neutral"} />
 						{text}
 					</li>
 				))}
-				<li>
-					<span className="font-medium text-accent">Cited</span>: a hypothesis
-					relies on it
+				<li className="inline-flex items-center gap-1.5">
+					<CitedTag />a hypothesis relies on it
 				</li>
 			</ul>
 			{groups.map(([key, title]) => (
@@ -1152,7 +1193,7 @@ function EvidenceList({ findings }: { findings: Findings }) {
 										id={evidenceId(item.handle)}
 										className="scroll-mt-20"
 									>
-										<summary className="-mx-1.5 flex cursor-pointer items-center gap-3 rounded px-1.5 py-2 text-sm hover:bg-interactive/25">
+										<summary className="-mx-1.5 flex cursor-pointer items-center gap-3 rounded px-1.5 py-2 text-sm transition-colors duration-150 hover:bg-surface">
 											<Chevron />
 											<span
 												title={humanize(item.basis)}
@@ -1167,11 +1208,7 @@ function EvidenceList({ findings }: { findings: Findings }) {
 											<span className="min-w-0 flex-1 break-words">
 												{item.label}
 											</span>
-											{cited.has(item.handle) && (
-												<span className="font-medium text-accent text-xs">
-													Cited
-												</span>
-											)}
+											{cited.has(item.handle) && <CitedTag />}
 										</summary>
 										{item.content ? (
 											<CodeBlock
@@ -1197,6 +1234,10 @@ function EvidenceList({ findings }: { findings: Findings }) {
 		</div>
 	);
 }
+
+/** Cells of the sandbox-run table: tighter on a phone so four columns fit without scrolling. */
+const RUN_TH = `${thClass.replace("px-4", "px-3")} sm:px-4`;
+const RUN_TD = `${tdClass.replace("px-4", "px-3")} sm:px-4`;
 
 function Reproduction({ investigation }: { investigation: Investigation }) {
 	const runs = useQuery({
@@ -1229,38 +1270,46 @@ function Reproduction({ investigation }: { investigation: Investigation }) {
 					items.length === 0 ? (
 						<p className="text-ink-3">No sandbox run recorded.</p>
 					) : (
-						<div>
-							<h3 className="font-medium text-ink-2 text-xs">
-								Sandbox runs ({items.length})
-							</h3>
-							<ul className="mt-1.5 divide-y divide-line border-line border-y">
+						<Table caption={`Sandbox runs (${items.length})`}>
+							<thead>
+								<tr>
+									<th className={RUN_TH}>Run</th>
+									<th className={RUN_TH}>Result</th>
+									<th className={`${RUN_TH} text-right`}>Exit</th>
+									<th className={`${RUN_TH} text-right`}>Duration</th>
+								</tr>
+							</thead>
+							<tbody>
 								{items.map((run) => (
-									<li
-										key={run.id}
-										className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-2.5 sm:grid-cols-[11rem_minmax(0,1fr)_auto]"
-									>
-										<span className="font-medium">{humanize(run.purpose)}</span>
-										<code className="order-last col-span-2 break-all text-ink-2 text-xs sm:order-none sm:col-span-1">
-											{run.argv.join(" ")}
-										</code>
-										<span className="flex items-center justify-end gap-3 text-xs">
+									<tr key={run.id}>
+										<td className={RUN_TD}>
+											<span className="font-medium">
+												{humanize(run.purpose)}
+											</span>
+											<code className="mt-0.5 block wrap-anywhere text-ink-2 text-xs">
+												{run.argv.join(" ")}
+											</code>
+										</td>
+										<td className={RUN_TD}>
 											<StateBadge value={run.status} />
-											<span className="text-ink-3 tabular-nums">
-												Exit {run.exit_code ?? "none"}
-											</span>
-											<span className="text-ink-3 tabular-nums">
-												{formatDuration(run.duration_ms)}
-											</span>
-										</span>
-										{run.truncated && (
-											<span className="col-span-full text-ink-3 text-xs">
-												Output truncated
-											</span>
-										)}
-									</li>
+											{run.truncated && (
+												<span className="mt-0.5 block text-ink-3 text-xs">
+													Output truncated
+												</span>
+											)}
+										</td>
+										<td className={`${RUN_TD} text-right tabular-nums`}>
+											{run.exit_code ?? "none"}
+										</td>
+										<td
+											className={`${RUN_TD} whitespace-nowrap text-right tabular-nums`}
+										>
+											{formatDuration(run.duration_ms)}
+										</td>
+									</tr>
 								))}
-							</ul>
-						</div>
+							</tbody>
+						</Table>
 					)
 				}
 			</QueryView>
@@ -1284,13 +1333,13 @@ function Patches({ investigation }: { investigation: Investigation }) {
 				items.length === 0 ? (
 					<Empty>No patch has been proposed.</Empty>
 				) : (
-					<ul className="-mt-4 divide-y divide-line border-line border-b">
+					<ul className="divide-y divide-line [&>li:first-child]:pt-0 [&>li:last-child]:pb-0">
 						{items.map((patch) => (
 							<li
 								key={patch.id}
-								className="grid gap-x-6 gap-y-3 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+								className="grid gap-x-6 gap-y-3 py-5 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
 							>
-								<div className="min-w-0 space-y-1.5">
+								<div className="min-w-0 space-y-2">
 									<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
 										<span className="font-semibold">
 											Attempt {patch.attempt}
@@ -1303,7 +1352,8 @@ function Patches({ investigation }: { investigation: Investigation }) {
 										)}
 									</p>
 									<p className="max-w-[68ch] text-ink">{patch.summary}</p>
-									<div>
+									<p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+										<span className="text-ink-3">Checks</span>
 										{patch.verification ? (
 											<OutcomeBadge
 												outcome={patch.verification.outcome}
@@ -1312,7 +1362,7 @@ function Patches({ investigation }: { investigation: Investigation }) {
 										) : (
 											<Status tone="neutral">No verification run</Status>
 										)}
-									</div>
+									</p>
 								</div>
 								<Link
 									to={`/investigations/${investigation.id}/patches/${patch.id}`}
@@ -1329,15 +1379,186 @@ function Patches({ investigation }: { investigation: Investigation }) {
 	);
 }
 
+/** The worker stages whose results feed each stop on the case trace, for the pulse on the live one. */
+const STAGE_STOP: Record<InvestigationStage, string> = {
+	normalize: "evidence",
+	collect_context: "evidence",
+	prepare_dependencies: "reproduction",
+	plan_reproduction: "reproduction",
+	reproduce_baseline: "reproduction",
+	generate_hypotheses: "hypothesis",
+	rank_hypotheses: "hypothesis",
+	generate_patch: "patch",
+	verify: "verification",
+	write_report: "report",
+};
+
+/** The strongest state among an investigation's hypotheses is what its trace says about them. */
+const HYPOTHESIS_RANK = [
+	"confirmed",
+	"supported",
+	"proposed",
+	"contradicted",
+	"rejected",
+] as const;
+
+const reportWritten = (data: Investigation) =>
+	data.steps.some(
+		(step) => step.stage === "write_report" && step.status === "succeeded",
+	);
+
+/**
+ * The case as one line, from the symptom to the decision. Every stop is read from stored data:
+ * the line into a stop is solid when something is recorded there, dashed into the next stop while
+ * work or a decision is pending, and dotted beyond. Nothing here is a claim about the fix.
+ */
+function caseTrace(
+	data: Investigation,
+	findings: Findings | undefined,
+): TraceStop[] {
+	const active =
+		data.status === "queued" ||
+		data.status === "running" ||
+		data.status === "needs_input" ||
+		data.status === "awaiting_approval";
+	const none = active ? "Not yet" : "None recorded";
+	const patch = data.latest_patch;
+	const review = patch
+		? `/investigations/${data.id}/patches/${patch.id}`
+		: undefined;
+	const evidence = findings
+		? EVIDENCE_GROUPS.reduce((sum, [key]) => sum + findings[key].length, 0)
+		: data.counts.findings;
+	const hypotheses = findings?.hypotheses ?? [];
+	const hypothesisCount = findings ? hypotheses.length : data.counts.hypotheses;
+	const leading = HYPOTHESIS_RANK.find((state) =>
+		hypotheses.some((hypothesis) => hypothesis.state === state),
+	);
+	const hypothesisValue =
+		leading === undefined
+			? hypothesisCount > 0
+				? `${hypothesisCount} ${hypothesisCount === 1 ? "hypothesis" : "hypotheses"}`
+				: none
+			: leading === "proposed"
+				? `${hypothesisCount} possible ${hypothesisCount === 1 ? "cause" : "causes"}`
+				: humanize(leading);
+	const baseline = data.baseline_reproduction;
+	const verification = data.latest_verification;
+	const decided =
+		patch !== null &&
+		(patch.status === "approved" ||
+			patch.status === "rejected" ||
+			patch.status === "changes_requested");
+	const awaiting =
+		data.status === "awaiting_approval" && patch?.status === "proposed";
+	const written = reportWritten(data);
+	const stops: TraceStop[] = [
+		{
+			key: "symptom",
+			label: "Symptom",
+			value: "Reported",
+			tone: "done",
+			open: true,
+			reached: true,
+			href: "#bug-heading",
+		},
+		{
+			key: "evidence",
+			label: "Evidence",
+			value:
+				evidence > 0
+					? `${evidence} ${evidence === 1 ? "item" : "items"}`
+					: none,
+			tone: evidence > 0 ? "done" : "neutral",
+			reached: evidence > 0,
+			href: "#evidence-heading",
+		},
+		{
+			key: "reproduction",
+			label: "Reproduction",
+			value: baseline ? humanize(baseline.status) : none,
+			tone: baseline
+				? (GENERIC_TONES[baseline.status] ?? "neutral")
+				: "neutral",
+			reached: baseline !== null,
+			href: "#repro-heading",
+		},
+		{
+			key: "hypothesis",
+			label: "Hypothesis",
+			value: hypothesisValue,
+			tone: leading ? (HYPOTHESIS_TONES[leading] ?? "neutral") : "neutral",
+			open: leading === undefined || HYPOTHESIS_HOLLOW.has(leading),
+			reached: hypothesisCount > 0,
+			href: "#findings-heading",
+		},
+		{
+			key: "patch",
+			label: "Patch",
+			value: patch ? humanize(patch.status) : none,
+			tone: patch ? (GENERIC_TONES[patch.status] ?? "neutral") : "neutral",
+			open: patch === null || patch.status === "proposed",
+			reached: patch !== null,
+			to: review,
+			href: review ? undefined : "#patches-heading",
+		},
+		{
+			key: "verification",
+			label: "Verification",
+			value: verification ? humanize(verification.outcome) : none,
+			tone: verification ? outcomeTone(verification.outcome) : "neutral",
+			reached: verification !== null,
+			to: review,
+		},
+		{
+			key: "report",
+			label: "Report",
+			value: written ? "Written" : none,
+			tone: written ? "done" : "neutral",
+			reached: written,
+			to: written ? `/investigations/${data.id}/report` : undefined,
+		},
+		{
+			key: "decision",
+			label: "Decision",
+			value: decided
+				? humanize(patch.status)
+				: awaiting
+					? "Awaiting decision"
+					: none,
+			tone: decided
+				? (GENERIC_TONES[patch.status] ?? "neutral")
+				: awaiting
+					? "decision"
+					: "neutral",
+			open: !decided,
+			reached: decided,
+			to: decided || awaiting ? review : undefined,
+		},
+	];
+	const firstOpen = stops.findIndex((stop) => !stop.reached);
+	const inFlight =
+		data.status === "running" && data.current_stage
+			? STAGE_STOP[data.current_stage]
+			: null;
+	return stops.map((stop, index) => ({
+		...stop,
+		pending: active && index === firstOpen,
+		live: stop.key === inFlight,
+	}));
+}
+
 /** The next useful step, from stored state only: decide, retry, read the report, or cancel. */
 function NextActions({
 	data,
+	reportReady,
 	onCancel,
 	cancelling,
 	onRetry,
 	retrying,
 }: {
 	data: Investigation;
+	reportReady: boolean;
 	onCancel: () => void;
 	cancelling: boolean;
 	onRetry: () => void;
@@ -1349,11 +1570,10 @@ function NextActions({
 			? data.latest_patch
 			: null;
 	const failed = data.status === "failed";
-	const reportReady = data.steps.some(
-		(step) => step.stage === "write_report" && step.status === "succeeded",
-	);
+	// On a phone the main action leads and fills the row; beside the title it stays last.
+	const primary = `${primaryButtonClass} max-sm:order-first max-sm:w-full`;
 	return (
-		<div className="flex flex-wrap items-center gap-2 sm:justify-end">
+		<>
 			{!TERMINAL.has(data.status) && (
 				<button
 					type="button"
@@ -1364,24 +1584,18 @@ function NextActions({
 					{cancelling ? "Cancelling…" : "Cancel investigation"}
 				</button>
 			)}
-			{reportReady ? (
+			{reportReady && (
 				<Link
 					to={`/investigations/${data.id}/report`}
-					className={decide || failed ? buttonClass : primaryButtonClass}
+					className={decide || failed ? buttonClass : primary}
 				>
 					Open resolution report
 				</Link>
-			) : (
-				<span className="text-ink-3 text-xs">
-					{TERMINAL.has(data.status)
-						? "No resolution report was written"
-						: "The resolution report is written at the last stage"}
-				</span>
 			)}
 			{failed && (
 				<button
 					type="button"
-					className={primaryButtonClass}
+					className={primary}
 					disabled={retrying}
 					onClick={onRetry}
 				>
@@ -1391,12 +1605,12 @@ function NextActions({
 			{decide && (
 				<Link
 					to={`/investigations/${data.id}/patches/${decide.id}`}
-					className={primaryButtonClass}
+					className={primary}
 				>
 					Review patch and decide
 				</Link>
 			)}
-		</div>
+		</>
 	);
 }
 
@@ -1456,136 +1670,137 @@ export function InvestigationPage() {
 					return (
 						<>
 							<title>{`${bug.data?.title ?? "Investigation"} · Tracera`}</title>
-							<header className="mt-3">
-								<div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-4">
-									<div className="min-w-0 max-w-3xl flex-[1_1_26rem]">
-										<h1 className="break-words font-semibold text-2xl leading-tight tracking-tight">
-											{bug.data?.title ?? <code>{data.id}</code>}
-										</h1>
-										<div
-											aria-live="polite"
-											className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-										>
-											<StateBadge value={data.status} size="sm" />
-											{message && <span className="text-ink-2">{message}</span>}
-											{data.progress.stage_index > 0 &&
-												data.status !== "completed" && (
-													<span className="text-ink-3 tabular-nums">
-														Stage {data.progress.stage_index} of{" "}
-														{data.progress.stage_count}
-													</span>
-												)}
-										</div>
+							<div className="mt-3">
+								<PageHeader
+									title={bug.data?.title ?? <code>{data.id}</code>}
+									actions={
+										<NextActions
+											data={data}
+											reportReady={reportWritten(data)}
+											onCancel={() => cancel.mutate()}
+											cancelling={cancel.isPending}
+											onRetry={() => retry.mutate()}
+											retrying={retry.isPending}
+										/>
+									}
+								>
+									<div
+										aria-live="polite"
+										className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+									>
+										<StateBadge value={data.status} size="sm" />
+										{message && <span className="text-ink-2">{message}</span>}
+										{data.progress.stage_index > 0 &&
+											data.status !== "completed" && (
+												<span className="text-ink-3 tabular-nums">
+													Stage {data.progress.stage_index} of{" "}
+													{data.progress.stage_count}
+												</span>
+											)}
 									</div>
-									<NextActions
-										data={data}
-										onCancel={() => cancel.mutate()}
-										cancelling={cancel.isPending}
-										onRetry={() => retry.mutate()}
-										retrying={retry.isPending}
+									<TraceStrip
+										className="mt-7"
+										label="Investigation trace"
+										stops={caseTrace(data, findings.data)}
+									/>
+								</PageHeader>
+							</div>
+							{(data.needs_input || data.failure) && (
+								<div className="mt-6 max-w-3xl space-y-3">
+									{data.needs_input && (
+										<Notice tone="warn" title="Input needed">
+											<p>{data.needs_input.question}</p>
+											<p className="mt-1 text-ink-3 text-xs">
+												Code <code>{data.needs_input.code}</code>. Answering
+												from the web app is not available yet.
+											</p>
+										</Notice>
+									)}
+									{data.failure && (
+										<Notice
+											tone="bad"
+											title={`Failed at ${humanize(data.failure.stage)}`}
+										>
+											<p className="break-words">
+												<code>{data.failure.code}</code>: {data.failure.message}
+											</p>
+											<p className="mt-1 text-ink-3 text-xs">
+												{data.failure.retryable
+													? "The server marks this failure as retryable."
+													: "The server marks this failure as not retryable."}
+											</p>
+										</Notice>
+									)}
+								</div>
+							)}
+							{cancel.error && (
+								<div className="mt-4">
+									<ErrorNotice
+										alert
+										title="Cancellation failed"
+										error={cancel.error}
 									/>
 								</div>
-								<Facts
-									className="mt-6 border-line border-y py-4"
-									items={[
-										[
-											"Repository",
-											<Link
-												key="repository"
-												to={`/repositories/${data.repository_id}`}
-												className={linkClass}
-											>
-												{repository.data?.name ?? (
-													<code className="text-xs">{data.repository_id}</code>
-												)}
-											</Link>,
-										],
-										["Commit", <Sha key="commit" sha={data.commit_sha} />],
-										[
-											"Mode",
-											data.mode === "analysis_only" ? (
-												<span key="mode" title={data.mode_reason ?? undefined}>
-													{data.mode_reason
-														? `Analysis only: ${data.mode_reason.replaceAll("_", " ")}`
-														: "Analysis only"}
-												</span>
-											) : (
-												"Full"
-											),
-										],
-										[
-											"Inference",
-											<span
-												key="inference"
-												className="flex flex-wrap items-center gap-2"
-											>
-												<InferenceLabel
-													mock={data.inference.mock}
-													detail={models || data.inference.provider}
-												/>
-												{data.flags.map((flag) => (
-													<Status key={flag} tone="warn" title={flag}>
-														{humanize(flag)}
-													</Status>
-												))}
-											</span>,
-										],
-										["Opened", <Time key="opened" iso={data.created_at} />],
-										data.finished_at !== null && [
-											"Finished",
-											<Time key="finished" iso={data.finished_at} />,
-										],
-									]}
-								/>
-								{data.needs_input && (
-									<div className="mt-5 border-warning border-l-2 bg-warning/[0.06] py-2.5 pr-3 pl-3.5 text-sm">
-										<p className="font-medium text-warning">Input needed</p>
-										<p className="mt-0.5">{data.needs_input.question}</p>
-										<p className="mt-1 text-ink-3 text-xs">
-											Code <code>{data.needs_input.code}</code>. Answering from
-											the web app is not available yet.
-										</p>
-									</div>
-								)}
-								{data.failure && (
-									<div className="mt-5 border-error border-l-2 bg-error/[0.07] py-2.5 pr-3 pl-3.5 text-sm">
-										<p className="font-medium text-error">
-											Failed at {humanize(data.failure.stage)}
-										</p>
-										<p className="mt-0.5 break-words">
-											<code>{data.failure.code}</code>: {data.failure.message}
-										</p>
-										<p className="mt-1 text-ink-3 text-xs">
-											{data.failure.retryable
-												? "The server marks this failure as retryable."
-												: "The server marks this failure as not retryable."}
-										</p>
-									</div>
-								)}
-								{cancel.error && (
-									<div className="mt-4">
-										<ErrorNotice
-											alert
-											title="Cancellation failed"
-											error={cancel.error}
-										/>
-									</div>
-								)}
-								{retry.error && (
-									<div className="mt-4">
-										<ErrorNotice
-											alert
-											title="Retry failed"
-											error={retry.error}
-										/>
-									</div>
-								)}
-							</header>
-
-							<div className="mt-8 grid gap-x-12 gap-y-10 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
-								<div className="lg:sticky lg:top-20 lg:self-start">
-									<Workflow investigation={data} />
+							)}
+							{retry.error && (
+								<div className="mt-4">
+									<ErrorNotice alert title="Retry failed" error={retry.error} />
 								</div>
+							)}
+							<Facts
+								className="mt-6"
+								items={[
+									[
+										"Repository",
+										<Link
+											key="repository"
+											to={`/repositories/${data.repository_id}`}
+											className={linkClass}
+										>
+											{repository.data?.name ?? (
+												<code className="text-xs">{data.repository_id}</code>
+											)}
+										</Link>,
+									],
+									["Commit", <Sha key="commit" sha={data.commit_sha} />],
+									[
+										"Mode",
+										data.mode === "analysis_only" ? (
+											<span key="mode" title={data.mode_reason ?? undefined}>
+												{data.mode_reason
+													? `Analysis only: ${data.mode_reason.replaceAll("_", " ")}`
+													: "Analysis only"}
+											</span>
+										) : (
+											"Full"
+										),
+									],
+									[
+										"Inference",
+										<span
+											key="inference"
+											className="flex flex-wrap items-center gap-2"
+										>
+											<InferenceLabel
+												mock={data.inference.mock}
+												detail={models || data.inference.provider}
+											/>
+											{data.flags.map((flag) => (
+												<Status key={flag} tone="warn" title={flag}>
+													{humanize(flag)}
+												</Status>
+											))}
+										</span>,
+									],
+									["Opened", <Time key="opened" iso={data.created_at} />],
+									data.finished_at !== null && [
+										"Finished",
+										<Time key="finished" iso={data.finished_at} />,
+									],
+								]}
+							/>
+
+							<div className="mt-10 grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_19rem]">
 								<div className="min-w-0 [&>section:first-child]:mt-0">
 									<Section
 										title="Bug report"
@@ -1641,6 +1856,9 @@ export function InvestigationPage() {
 									<Section title="Patches" id="patches-heading">
 										<Patches investigation={data} />
 									</Section>
+								</div>
+								<div className="min-w-0 lg:sticky lg:top-20 lg:self-start [&>section:first-child]:mt-0">
+									<Workflow investigation={data} />
 								</div>
 							</div>
 						</>
