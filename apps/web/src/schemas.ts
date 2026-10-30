@@ -795,3 +795,49 @@ export type VerificationEnvironment = z.infer<
 >;
 export type Check = z.infer<typeof CheckSchema>;
 export type Report = z.infer<typeof ReportSchema>["report"];
+
+/** `view()` in apps/server/src/modules/publication.ts: one authorized action and what git reported. */
+export const PatchActionSchema = z.object({
+	id: idSchema("act"),
+	kind: z.enum(["apply", "commit", "push"]),
+	status: z.enum(["queued", "running", "succeeded", "failed", "refused"]),
+	acknowledged_outcome: VerificationOutcomeSchema.nullable(),
+	params: z.record(z.string(), z.unknown()),
+	result: z
+		.object({
+			changed_files: z
+				.array(
+					z.object({
+						path: z.string(),
+						status: z.enum(["added", "modified", "deleted"]),
+					}),
+				)
+				.optional(),
+			head_commit: z.string().optional(),
+			commit_sha: z.string().optional(),
+			branch: z.string().optional(),
+			remote: z.string().optional(),
+			pushed_ref: z.string().optional(),
+			detail: z.string().optional(),
+		})
+		.nullable(),
+	error_code: z.string().nullable(),
+	created_at: timestamp,
+	finished_at: timestamp.nullable(),
+});
+/** GET /patches/{id}/actions: `listActions()`. `path` is null unless the repository is a local path. */
+export const PatchActionListSchema = z.object({
+	target: z.object({
+		repository_name: z.string(),
+		local: z.boolean(),
+		path: z.string().nullable(),
+		base_commit: z.string(),
+		suggested_branch: z.string(),
+	}),
+	items: z.array(PatchActionSchema),
+});
+/** POST /patches/{id}/actions (201): `requestAction()`. */
+export const PatchActionResponseSchema = z.object({
+	action: PatchActionSchema,
+});
+export type PatchAction = z.infer<typeof PatchActionSchema>;

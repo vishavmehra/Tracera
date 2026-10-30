@@ -51,6 +51,7 @@ export const ROUTE_RULES: RouteRule[] = [
 		"POST /api/v1/repositories",
 		"PATCH /api/v1/repositories/:id",
 		"DELETE /api/v1/repositories/:id",
+		"POST /api/v1/patches/:id/actions",
 	),
 	...rules(
 		"repositories:read",
@@ -102,6 +103,9 @@ export const ROUTE_RULES: RouteRule[] = [
 		"GET /api/v1/patches/:id",
 		"GET /api/v1/patches/:id/diff",
 		"GET /api/v1/verifications/:id",
+		"GET /api/v1/patches/:id/actions",
+		"GET /api/v1/actions/:id",
+		"GET /api/v1/patches/:id/download",
 	),
 	...rules("reports:write", "POST /api/v1/bug-reports"),
 	...rules(
@@ -160,6 +164,7 @@ export const COLLECTION_PREFIX: Record<string, IdPrefix> = {
 	tokens: "tok",
 	meetings: "mtg",
 	integrations: "int",
+	actions: "act",
 };
 
 /** The collection segment before `:id`, or null for routes without one. */

@@ -10,7 +10,7 @@
 4. **Generate a fix.** A patch is proposed and checked against policy before anything runs.
 5. **Run it in the sandbox.** Tests (or a browser reproduction for UI bugs) run in a locked-down Docker container, first to reproduce the bug and then against the patch.
 6. **Verify.** The outcome is derived by rules from what the sandbox observed. A passing test suite alone never produces "verified".
-7. **Show the developer what changed.** The diff, impact analysis, evidence, and a resolution report are presented for review. Approval records a decision and changes no files.
+7. **Show the developer what changed.** The diff, impact analysis, evidence, and a resolution report are presented for review. Approval records a decision and changes no files. Applying the patch, committing it, and pushing it are separate actions you authorize one at a time afterwards.
 
 ## Features
 
@@ -19,6 +19,7 @@
 - Patch impact analysis for two revisions or a diff: what changed, which tests cover it, and what it can reach.
 - The investigation pipeline described above, with dependency preparation behind an egress-restricted proxy and browser reproduction for UI bugs.
 - Review and approval of patches, resolution reports, and an audit trail.
+- Authorized actions on an approved patch, each a separate request from a signed-in owner: download the reviewed diff, apply it to a local working tree, commit it to a new branch, and push that branch (never forced, never to the default branch). They act on repositories registered as local paths, so they are a local feature. Pull requests are not built.
 - A web workspace (React) for repositories, graph exploration, questions, impact, investigations, and review.
 - Meeting transcripts: upload a WebVTT, SRT, or plain-text transcript (or import one from Google Meet), review the bug candidates a model proposes with quotes from the transcript, and turn confirmed ones into bug reports and investigations (see below).
 - A local stdio MCP server so coding agents can use Tracera (see below).
@@ -144,7 +145,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 - Dependencies are installed from lockfiles without lifecycle scripts, through a proxy that admits only the configured registry.
 - Models never act. They return strict-schema JSON that code validates; citations are checked, and hypothesis states and verification outcomes are set only by rules in code.
 - Nothing is reported as verified, fixed, or confirmed unless the stored data says so.
-- Approval is a review decision made in a signed-in session and changes no files.
+- Approval is a review decision made in a signed-in session and changes no files. Applying a patch, committing, and pushing are separate requests that only a signed-in owner session can make (tokens and MCP clients get `session_required`). Each must echo the verification outcome you saw, acknowledge the risks when that outcome is not "verified", and runs git with hooks disabled and without force.
 - Secrets stay in the server environment: they are not in the web bundle, logs, or API responses, and they are redacted before every model call.
 - Every query is scoped to a workspace, cookie-authenticated changes require a custom header and a same-origin request (decided by the matched route, so percent-encoded and absolute-form URL spellings get no bypass), and API tokens are scoped, expiring, and stored hashed.
 - Two integration suites hold every registered route to a written access rule (`apps/server/test/security-routes.ts`): a security matrix for authentication, token scopes, owner-only routes, and CSRF, and a workspace isolation suite for foreign IDs. A new route fails them until its rule is added.
@@ -153,7 +154,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 ## Known limitations
 
 - Repositories are local paths only. There is no integration with GitHub or other hosted Git providers: no remote cloning, sync, or pull-request creation.
-- Applying a patch to a working tree, committing, pushing, and opening a pull request are not implemented. Approval records a decision only.
+- Applying a patch, committing to a new branch, and pushing without force are implemented for local-path repositories; opening a pull request is not. Approval itself records a decision only.
 - Meetings are available through the REST API only; the web app has no Meetings page yet. The Google Meet import is tested against recorded synthetic responses and needs your own Google Cloud OAuth client to run for real. There is no browser extension in this repository.
 - The code graph parses JavaScript, TypeScript, and SQL. Other languages are detected and counted but not parsed.
 - The Meta adapter is exercised in automated tests against a local stand-in server; running it for real needs a Meta Model API key with billing enabled.

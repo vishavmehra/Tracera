@@ -1,4 +1,5 @@
 import {
+	type ActionRequest,
 	type ApprovalRequest,
 	type AskQuestionRequest,
 	type ChangeImpactRequest,
@@ -21,6 +22,8 @@ import {
 	InvestigationListSchema,
 	InvestigationResponseSchema,
 	NodeDetailSchema,
+	PatchActionListSchema,
+	PatchActionResponseSchema,
 	PatchAnalysisListSchema,
 	PatchAnalysisResponseSchema,
 	PatchDiffSchema,
@@ -339,3 +342,21 @@ export const decidePatch = (id: string, input: ApprovalRequest) =>
 		method: "POST",
 		body: input,
 	});
+
+// ---- Authorized actions on an approved patch (apply, commit, push) ----
+export const listPatchActions = (id: string) =>
+	request(`/api/v1/patches/${enc(id)}/actions`, PatchActionListSchema);
+/** Owner session only on the server; each call is one explicitly authorized action. */
+export const requestPatchAction = async (id: string, input: ActionRequest) =>
+	(
+		await request(
+			`/api/v1/patches/${enc(id)}/actions`,
+			PatchActionResponseSchema,
+			{
+				method: "POST",
+				body: input,
+			},
+		)
+	).action;
+export const patchDownloadPath = (id: string) =>
+	`/api/v1/patches/${enc(id)}/download`;

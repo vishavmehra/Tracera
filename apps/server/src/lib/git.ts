@@ -24,14 +24,14 @@ const HARDENING = [
 	"submodule.recurse=false",
 ];
 
-function gitEnv(): NodeJS.ProcessEnv {
+function gitEnv(userConfig = false): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(process.env))
 		if (!key.toUpperCase().startsWith("GIT_")) env[key] = value;
 	return {
 		...env,
 		GIT_TERMINAL_PROMPT: "0",
-		GIT_CONFIG_NOSYSTEM: "1",
+		...(userConfig ? {} : { GIT_CONFIG_NOSYSTEM: "1" }),
 		GIT_OPTIONAL_LOCKS: "0",
 		GIT_LFS_SKIP_SMUDGE: "1",
 	};
@@ -45,11 +45,15 @@ export type GitResult = {
 	timedOut: boolean;
 };
 
-/** Hardened git (argument array, never a shell). Untrusted values go after `-e`, `--`, or `--end-of-options`. */
+/**
+ * Hardened git (argument array, never a shell). Untrusted values go after `-e`, `--`, or `--end-of-options`.
+ * `userConfig` keeps the machine's system git configuration (for example a credential helper), which
+ * a push needs to authenticate with the user's own credentials.
+ */
 export function git(
 	cwd: string,
 	args: readonly string[],
-	options: { timeoutMs?: number; maxBytes?: number } = {},
+	options: { timeoutMs?: number; maxBytes?: number; userConfig?: boolean } = {},
 ): Promise<GitResult> {
 	return new Promise((resolve) => {
 		execFile(
@@ -57,7 +61,7 @@ export function git(
 			[...HARDENING, ...args],
 			{
 				cwd,
-				env: gitEnv(),
+				env: gitEnv(options.userConfig),
 				timeout: options.timeoutMs ?? 15_000,
 				windowsHide: true,
 				maxBuffer: options.maxBytes ?? 8 * 1024 * 1024,

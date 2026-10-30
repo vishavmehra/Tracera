@@ -82,6 +82,7 @@ const BODY: Record<string, unknown> = {
 		commands: { install: "npm ci --ignore-scripts", test: "npm test" },
 	},
 	"PATCH /api/v1/repositories/:id": { name: "renamed" },
+	"POST /api/v1/patches/:id/actions": { kind: "apply" },
 	"POST /api/v1/repositories/:id/impact": {
 		targets: [{ kind: "file", path: "src/index.js" }],
 	},

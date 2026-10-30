@@ -6,7 +6,7 @@ import type { MeetingExtractionOutput } from "@tracera/contracts";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupBenchShop } from "../../../scripts/bench-setup.ts";
-import { integrationConnections } from "../src/db/schema.ts";
+import { authorizedActions, integrationConnections } from "../src/db/schema.ts";
 import { newId } from "../src/lib/ids.ts";
 import { runIndexJob } from "../src/modules/graph.ts";
 import {
@@ -378,6 +378,19 @@ beforeAll(async () => {
 	);
 	ids.tokens = tokens.items[0]?.id ?? "";
 
+	// An action request that was refused (the patch is not approved), so an action exists to address.
+	ids.actions = newId("act");
+	await ctx.db.insert(authorizedActions).values({
+		id: ids.actions,
+		workspaceId: ownerWorkspaceId,
+		patchId: ids.patches,
+		repositoryId: ids.repositories,
+		kind: "apply",
+		status: "refused",
+		requestedBy: ownerUserId,
+		errorCode: "not_approved",
+	});
+
 	// A meeting with one extracted candidate, and the owner's provider connection (never used).
 	const meeting = await seedMeeting(owner, ids.repositories);
 	ids.meetings = meeting.meetingId;
@@ -478,6 +491,7 @@ function requestFor(method: Method, routePath: string) {
 			verification_id: ids.verifications,
 			acknowledged_risks: [],
 		},
+		"POST /api/v1/patches/:id/actions": { kind: "apply" },
 		"PATCH /api/v1/meetings/:id": { title: "taken-over" },
 		"PATCH /api/v1/meetings/:id/candidates/:candidateId": {
 			title: "taken-over",
@@ -730,6 +744,12 @@ describe("workspace isolation [mock inference, fake executor]", () => {
 			[ids.integrations],
 		);
 		expect(connection.rows[0]?.n).toBe(1);
+		const actions = await get<{ items: Array<{ id: string; status: string }> }>(
+			`/api/v1/patches/${ids.patches}/actions`,
+		);
+		expect(actions.items.map((a) => [a.id, a.status])).toEqual([
+			[ids.actions, "refused"],
+		]);
 		expect(
 			(await asToken(ctx, ownerToken)("GET", "/api/v1/auth/me")).statusCode,
 		).toBe(200);

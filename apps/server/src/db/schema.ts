@@ -1266,3 +1266,55 @@ export const meetingCandidates = pgTable(
 	],
 );
 // ---- end of the meetings section ----------------------------------------------------------------
+
+// ---- User-authorized patch actions: apply, commit, push ----------------------------------------
+
+export const authorizedActionKind = pgEnum("authorized_action_kind", [
+	"apply",
+	"commit",
+	"push",
+]);
+export const authorizedActionStatus = pgEnum("authorized_action_status", [
+	"queued",
+	"running",
+	"succeeded",
+	"failed",
+	"refused",
+]);
+
+/** One action the user explicitly authorized for an approved patch, with what git reported. */
+export const authorizedActions = pgTable(
+	"authorized_actions",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		patchId: text()
+			.notNull()
+			.references(() => patchProposals.id, { onDelete: "cascade" }),
+		repositoryId: text()
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		kind: authorizedActionKind().notNull(),
+		status: authorizedActionStatus().notNull(),
+		requestedBy: text()
+			.notNull()
+			.references(() => users.id),
+		/** Null when the request did not name an outcome. */
+		acknowledgedOutcome: verificationOutcome(),
+		acknowledgedRisks: boolean().notNull().default(false),
+		params: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+		result: jsonb().$type<Record<string, unknown>>(),
+		errorCode: text(),
+		createdAt: createdAt(),
+		finishedAt: ts(),
+	},
+	(t) => [
+		// One running action per repository, enforced by the database.
+		uniqueIndex("authorized_actions_one_running_per_repository")
+			.on(t.repositoryId)
+			.where(sql`${t.status} = 'running'`),
+		index().on(t.patchId, t.createdAt),
+	],
+);

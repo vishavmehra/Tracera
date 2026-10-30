@@ -16,6 +16,7 @@ import {
 	investigationQueryKey,
 	useInvestigation,
 } from "./investigations.tsx";
+import { PublicationPanel } from "./publication.tsx";
 import {
 	type Check,
 	type Investigation,
@@ -811,6 +812,8 @@ export function PatchReviewPage() {
 										)}
 									</QueryView>
 								</Section>
+
+								<PublicationPanel patch={data} />
 							</div>
 						</div>
 					</>
