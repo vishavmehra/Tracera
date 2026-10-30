@@ -12,3 +12,4 @@ export * from "./patch-impact.ts";
 export * from "./publication.ts";
 export * from "./repositories.ts";
 export * from "./specialists.ts";
+export * from "./visual.ts";

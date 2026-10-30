@@ -21,7 +21,9 @@ export function createMockProvider(): ChatProvider {
 			if (title && typeof value === "object" && value && "title" in value)
 				value.title = title;
 			if (typeof value === "object" && value && "summary" in value)
-				value.summary = "Mock inference: no model analysed this report.";
+				value.summary = request.messages.some((m) => m.images?.length)
+					? "Mock inference: no model looked at this image."
+					: "Mock inference: no model analysed this report.";
 			const content = JSON.stringify(value);
 			const inputChars = request.messages.reduce(
 				(sum, m) => sum + m.content.length,

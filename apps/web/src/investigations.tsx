@@ -56,6 +56,11 @@ import {
 	Time,
 	type Tone,
 } from "./ui.tsx";
+import {
+	ScreenshotEvidence,
+	ScreenshotField,
+	uploadScreenshot,
+} from "./visual-evidence.tsx";
 
 /** Statuses where the worker is still moving the investigation forward by itself. */
 const WORKING: ReadonlySet<InvestigationStatus> = new Set([
@@ -198,6 +203,7 @@ export function NewInvestigationPage() {
 		queryFn: listRepositories,
 	});
 	const [bugReportId, setBugReportId] = useState<string | null>(null);
+	const [screenshotError, setScreenshotError] = useState<unknown>(null);
 	const [options, setOptions] = useState<{
 		repository_id: string;
 		mode: "full" | "analysis_only";
@@ -217,6 +223,10 @@ export function NewInvestigationPage() {
 	const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
+		// Read before the first await: the event's currentTarget is gone afterwards.
+		const picked = event.currentTarget.elements.namedItem("screenshot");
+		const screenshot =
+			picked instanceof HTMLInputElement ? picked.files?.[0] : undefined;
 		const text = (name: string) => String(form.get(name) ?? "").trim();
 		const optional = (name: string) => text(name) || undefined;
 		const chosen = {
@@ -247,6 +257,13 @@ export function NewInvestigationPage() {
 			.catch(() => null);
 		if (!created) return;
 		setBugReportId(created.bug_report.id);
+		if (screenshot && screenshot.size > 0)
+			try {
+				await uploadScreenshot(created.bug_report.id, screenshot);
+			} catch (error) {
+				setScreenshotError(error);
+				return;
+			}
 		investigate.mutate({ bug_report_id: created.bug_report.id, ...chosen });
 	};
 	const active =
@@ -378,6 +395,7 @@ export function NewInvestigationPage() {
 									/>,
 									"Redacted on the server before any model sees it.",
 								)}
+								<ScreenshotField />
 							</fieldset>
 							<fieldset className="min-w-0 space-y-5 lg:border-line lg:border-l lg:pl-8">
 								<legend className="mb-1 font-semibold text-base">
@@ -439,6 +457,31 @@ export function NewInvestigationPage() {
 										title="The bug report could not be created"
 										error={report.error}
 									/>
+								)}
+								{screenshotError !== null && (
+									<div className="space-y-2">
+										<ErrorNotice
+											alert
+											title="The bug report was saved, but its screenshot could not be attached"
+											error={screenshotError}
+										/>
+										{bugReportId && options && (
+											<button
+												type="button"
+												className={buttonClass}
+												disabled={investigate.isPending}
+												onClick={() => {
+													setScreenshotError(null);
+													investigate.mutate({
+														bug_report_id: bugReportId,
+														...options,
+													});
+												}}
+											>
+												Start the investigation without the screenshot
+											</button>
+										)}
+									</div>
 								)}
 								{investigate.error && (
 									<div className="space-y-2">
@@ -1561,6 +1604,12 @@ export function InvestigationPage() {
 											{(report) => <BugReportView report={report} />}
 										</QueryView>
 									</Section>
+
+									<ScreenshotEvidence
+										bugReportId={data.bug_report_id}
+										version={data.state_version}
+										active={WORKING.has(data.status)}
+									/>
 
 									<Section
 										title="Findings"

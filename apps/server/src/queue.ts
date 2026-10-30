@@ -9,6 +9,8 @@ export const QUEUES = {
 	assess: "repository.assess",
 	patchImpact: "repository.patch_impact",
 	dependencies: "dependencies.prepare",
+	observe: "evidence.observe",
+	locate: "evidence.locate",
 } as const;
 
 export type NormalizeJob = { bugReportId: string; workspaceId: string };
@@ -16,6 +18,12 @@ export type IndexJob = { snapshotId: string };
 export type AssessJob = { assessmentId: string };
 export type PatchImpactJob = { analysisId: string };
 export type DependencyPrepareJob = { snapshotId: string };
+export type ObserveJob = { evidenceId: string; workspaceId: string };
+export type LocateJob = {
+	evidenceId: string;
+	workspaceId: string;
+	phrase: string;
+};
 export type StageJob = {
 	investigationId: string;
 	stage: InvestigationStage;
@@ -48,6 +56,9 @@ export async function startQueue(
 		[QUEUES.patchImpact, 900],
 		// Preparation timeout (≤ 840 s) plus sealing and container setup.
 		[QUEUES.dependencies, 1500],
+		// One vision call: a few attempts of at most TRACERA_LLM_TIMEOUT_MS each.
+		[QUEUES.observe, 900],
+		[QUEUES.locate, 600],
 	];
 	for (const [name, expireInSeconds] of queues) {
 		if (await boss.getQueue(name)) continue;
@@ -91,3 +102,11 @@ export const enqueueDependencyPrepare = (
 	db: QueueDb,
 	job: DependencyPrepareJob,
 ) => boss.send(QUEUES.dependencies, job, { db, singletonKey: job.snapshotId });
+
+/** Reads one screenshot with the vision model; enqueue it wherever an image is attached to a report. */
+export const enqueueObserve = (boss: PgBoss, db: QueueDb, job: ObserveJob) =>
+	boss.send(QUEUES.observe, job, { db, singletonKey: job.evidenceId });
+
+/** Locates a named UI element in one screenshot with the segmentation model. */
+export const enqueueLocate = (boss: PgBoss, db: QueueDb, job: LocateJob) =>
+	boss.send(QUEUES.locate, job, { db });

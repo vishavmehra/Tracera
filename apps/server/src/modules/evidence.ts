@@ -6,12 +6,14 @@ import {
 } from "@tracera/contracts";
 import { and, eq } from "drizzle-orm";
 import type pg from "pg";
+import type { PgBoss } from "pg-boss";
 import type { Config } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import { bugReports, evidenceAssets } from "../db/schema.ts";
 import { putBlob } from "../lib/fs.ts";
 import { AppError } from "../lib/http.ts";
 import { newId } from "../lib/ids.ts";
+import { enqueueObserve } from "../queue.ts";
 import { audit } from "./audit.ts";
 import { type AuthContext, actorOf, sourceChannelOf } from "./auth.ts";
 import { stripUrl } from "./bug-reports.ts";
@@ -39,7 +41,7 @@ export function detectImageType(
  * as client-reported provenance: the server cannot see what the client blacked out.
  */
 export async function addScreenshotEvidence(
-	deps: { pool: pg.Pool; db: Db; config: Config },
+	deps: { pool: pg.Pool; db: Db; boss: PgBoss; config: Config },
 	ctx: AuthContext,
 	bugReportId: string,
 	file: { bytes: Buffer; declaredType: string; name: string },
@@ -62,8 +64,17 @@ export async function addScreenshotEvidence(
 			"not_found",
 			`Bug report ${bugReportId} was not found`,
 		);
-	if (file.bytes.length > MAX_IMAGE_EVIDENCE_BYTES)
-		throw new AppError(413, "payload_too_large", "Images are limited to 10 MB");
+	// The smaller of the hard limit and what a model call may carry, so an image that uploads can be read.
+	const limit = Math.min(
+		MAX_IMAGE_EVIDENCE_BYTES,
+		deps.config.inference.maxImageBytes,
+	);
+	if (file.bytes.length > limit)
+		throw new AppError(
+			413,
+			"payload_too_large",
+			`Images are limited to ${Number((limit / (1024 * 1024)).toFixed(1))} MB`,
+		);
 	const mimeType = detectImageType(file.bytes);
 	if (!mimeType)
 		throw new AppError(
@@ -97,7 +108,7 @@ export async function addScreenshotEvidence(
 			methodPath: `POST /api/v1/bug-reports/${bugReportId}/evidence`,
 			body: { meta, sha256: blob.sha256 },
 		},
-		async ({ db }) => {
+		async ({ db, queueDb }) => {
 			const [row] = await db
 				.insert(evidenceAssets)
 				.values({
@@ -153,6 +164,11 @@ export async function addScreenshotEvidence(
 				},
 				requestId: request.requestId,
 			});
+			// Queued with the upload, so a stored screenshot is never left without its read being scheduled.
+			await enqueueObserve(deps.boss, queueDb, {
+				evidenceId: row.id,
+				workspaceId: ctx.workspaceId,
+			});
 			return {
 				status: 201,
 				body: {
@@ -165,7 +181,7 @@ export async function addScreenshotEvidence(
 						captured_at: row.capturedAt?.toISOString() ?? null,
 						captured_at_client_reported: row.capturedAt !== null,
 						provenance: row.provenance,
-						content_url: null, // no download endpoint yet
+						content_url: `/api/v1/evidence/${row.id}/content`,
 						created_at: row.createdAt.toISOString(),
 					},
 				},

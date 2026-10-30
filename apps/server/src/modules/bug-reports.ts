@@ -211,7 +211,10 @@ export async function getBugReport(db: Db, workspaceId: string, id: string) {
 			captured_at: asset.capturedAt?.toISOString() ?? null,
 			captured_at_client_reported: asset.capturedAt !== null,
 			provenance: asset.provenance,
-			content_url: null, // no download endpoint yet
+			content_url:
+				asset.kind === "screenshot"
+					? `/api/v1/evidence/${asset.id}/content`
+					: null,
 			created_at: asset.createdAt.toISOString(),
 		})),
 		latest_investigation: latest

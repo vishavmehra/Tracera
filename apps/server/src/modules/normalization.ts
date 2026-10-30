@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { NormalizationOutput } from "@tracera/contracts";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import type pg from "pg";
 import type { Config } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../db/schema.ts";
 import {
 	createGateway,
+	type GatewayDeps,
 	InferenceError,
 	type ModelExecutionRecord,
 } from "../inference/gateway.ts";
@@ -23,6 +25,7 @@ import {
 } from "../inference/tasks.ts";
 import { newId } from "../lib/ids.ts";
 import { audit, WORKER_ACTOR } from "./audit.ts";
+import { screenshotEvidenceForNormalization } from "./visual-evidence.ts";
 
 type BugReportRow = typeof bugReports.$inferSelect;
 const TEXT_KINDS = ["stack_trace", "log_file", "text_note"] as const;
@@ -82,6 +85,15 @@ export async function investigationLimit(
 /** Gateway bound to one workspace: budget and model-execution rows are scoped to it. */
 export function workspaceGateway(
 	deps: { db: Db; config: Config; provider: ChatProvider },
+	scope: Parameters<typeof workspaceGatewayDeps>[1],
+	options: { model?: string } = {},
+) {
+	return createGateway(workspaceGatewayDeps(deps, scope, options));
+}
+
+/** What workspaceGateway is built from, for adapters that are not chat calls (segmentation). */
+export function workspaceGatewayDeps(
+	deps: { db: Db; config: Config; provider: ChatProvider },
 	scope: {
 		workspaceId: string;
 		bugReportId?: string | null;
@@ -89,16 +101,17 @@ export function workspaceGateway(
 		assessmentId?: string | null;
 	},
 	options: { model?: string } = {},
-) {
+): GatewayDeps {
 	const inference = deps.config.inference;
 	const investigationId = scope.investigationId;
-	return createGateway({
+	return {
 		provider: deps.provider,
 		model: options.model ?? inference.taskModels.normalize_bug_report,
 		timeoutMs: inference.timeoutMs,
 		redactEmails: inference.redactEmails,
 		maxConcurrency: inference.maxConcurrency,
 		dailyBudgetUsd: inference.dailyBudgetUsd,
+		maxImageBytes: inference.maxImageBytes,
 		spentTodayUsd: () => spentTodayUsd(deps.db, scope.workspaceId),
 		...(investigationId
 			? {
@@ -132,7 +145,7 @@ export function workspaceGateway(
 			});
 			return id;
 		},
-	});
+	};
 }
 
 /**
@@ -219,7 +232,7 @@ export type NormalizationOutcome =
 
 /** Normalizes one bug report with the configured provider. Failures are recorded, never thrown. */
 export async function runNormalization(
-	deps: { db: Db; config: Config; provider: ChatProvider },
+	deps: { db: Db; pool: pg.Pool; config: Config; provider: ChatProvider },
 	bugReportId: string,
 	context: { investigationId?: string | null } = {},
 ): Promise<NormalizationOutcome> {
@@ -268,6 +281,11 @@ export async function runNormalization(
 		investigationId: context.investigationId,
 	});
 	try {
+		const screenshots = await screenshotEvidenceForNormalization(deps, {
+			workspaceId: row.workspaceId,
+			bugReportId,
+			investigationId: context.investigationId,
+		});
 		const user = buildNormalizationInput(
 			{
 				title: row.title,
@@ -278,7 +296,8 @@ export async function runNormalization(
 				environment: row.environment,
 				affectedUrl: row.affectedUrl,
 			},
-			texts,
+			[...texts, ...screenshots.evidence],
+			screenshots.unread,
 		);
 		const result = await gateway.run(normalizeBugReportTask, {
 			user,

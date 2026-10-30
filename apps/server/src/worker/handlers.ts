@@ -28,12 +28,16 @@ import {
 	recoverLostPatchAnalyses,
 	runPatchImpactJob,
 } from "../modules/patch-analysis.ts";
+import { observeEvidenceAsset } from "../modules/visual-evidence.ts";
+import { locateInEvidence } from "../modules/visual-locate.ts";
 import { workspacesRoot } from "../modules/workspace.ts";
 import {
 	type AssessJob,
 	type DependencyPrepareJob,
 	type IndexJob,
+	type LocateJob,
 	type NormalizeJob,
+	type ObserveJob,
 	type PatchImpactJob,
 	QUEUES,
 	type StageJob,
@@ -117,6 +121,29 @@ export async function handleNormalizeJob(
 		.limit(1);
 	if (!bug || bug.status === "done") return; // deleted or already normalized: nothing to do (idempotent)
 	await runNormalization(deps, job.bugReportId);
+}
+
+/** Failures are stored with the reading; a job only fails when the stage that owns the call was cancelled. */
+export async function handleObserveJob(
+	deps: WorkerDeps,
+	job: ObserveJob,
+): Promise<void> {
+	await observeEvidenceAsset(deps, {
+		workspaceId: job.workspaceId,
+		evidenceId: job.evidenceId,
+	});
+}
+
+/** The located boxes, or the failure, are stored as derived evidence; the job itself does not fail on them. */
+export async function handleLocateJob(
+	deps: WorkerDeps,
+	job: LocateJob,
+): Promise<void> {
+	await locateInEvidence(deps, {
+		workspaceId: job.workspaceId,
+		evidenceId: job.evidenceId,
+		phrase: job.phrase,
+	});
 }
 
 export async function handleStageJob(
@@ -232,6 +259,20 @@ export async function startWorker(
 	// ---- Meetings: transcript bug extraction (queue meeting.extract) ----
 	await registerMeetingWorker(deps);
 	// ---- end of the meetings section ----
+	await deps.boss.work<ObserveJob>(
+		QUEUES.observe,
+		{ batchSize: 1 },
+		async ([job]) => {
+			if (job) await handleObserveJob(deps, job.data);
+		},
+	);
+	await deps.boss.work<LocateJob>(
+		QUEUES.locate,
+		{ batchSize: 1 },
+		async ([job]) => {
+			if (job) await handleLocateJob(deps, job.data);
+		},
+	);
 	const heartbeat = setInterval(() => {
 		publishHeartbeat(deps, startedAt).catch(report);
 	}, 15_000);

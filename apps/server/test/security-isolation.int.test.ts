@@ -6,7 +6,12 @@ import type { MeetingExtractionOutput } from "@tracera/contracts";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupBenchShop } from "../../../scripts/bench-setup.ts";
-import { authorizedActions, integrationConnections } from "../src/db/schema.ts";
+import {
+	authorizedActions,
+	evidenceAssets,
+	integrationConnections,
+} from "../src/db/schema.ts";
+import { putBlob } from "../src/lib/fs.ts";
 import { newId } from "../src/lib/ids.ts";
 import { runIndexJob } from "../src/modules/graph.ts";
 import {
@@ -366,6 +371,24 @@ beforeAll(async () => {
 		201,
 	);
 	ids["bug-reports"] = bug.bug_report.id;
+	// Evidence of workspace A, stored directly (the upload route has its own tests).
+	const screenshot = await putBlob(
+		path.join(ctx.config.dataDir, "blobs"),
+		Buffer.from("89504e470d0a1a0a00", "hex"),
+	);
+	ids.evidence = newId("evd");
+	await ctx.db.insert(evidenceAssets).values({
+		id: ids.evidence,
+		workspaceId: ownerWorkspaceId,
+		bugReportId: ids["bug-reports"],
+		kind: "screenshot",
+		origin: "user_provided",
+		blobSha256: screenshot.sha256,
+		mimeType: "image/png",
+		sizeBytes: screenshot.size,
+		provenance: {},
+		retentionUntil: new Date(Date.now() + 86_400_000),
+	});
 	const investigation = await json<{ investigation: { id: string } }>(
 		owner("POST", "/api/v1/investigations", {
 			bug_report_id: ids["bug-reports"],
@@ -518,6 +541,7 @@ function requestFor(method: Method, routePath: string) {
 		"POST /api/v1/repositories/:id/stack-traces/map": {
 			trace: `TypeError: boom\n    at averageOrderValueCents (${B3.file}:3:10)`,
 		},
+		"POST /api/v1/evidence/:id/locate": { phrase: "button" },
 		"POST /api/v1/patches/:id/approval": {
 			decision: "approved",
 			verification_id: ids.verifications,

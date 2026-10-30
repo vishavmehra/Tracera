@@ -6,6 +6,8 @@ import {
 	type CreateBugReportRequest,
 	type CreateInvestigationRequest,
 	type CreateRepositoryRequest,
+	EvidenceLocationsResponseSchema,
+	EvidenceObservationsResponseSchema,
 	type LoginRequest,
 	type PatchImpactRequest,
 	type Problem,
@@ -360,3 +362,51 @@ export const requestPatchAction = async (id: string, input: ActionRequest) =>
 	).action;
 export const patchDownloadPath = (id: string) =>
 	`/api/v1/patches/${enc(id)}/download`;
+// ---- Screenshot evidence ----
+/** Evidence attached to a bug report; `toView()` in apps/server/src/modules/bug-reports.ts. */
+const BugReportEvidenceSchema = z.object({
+	bug_report: z.object({
+		evidence: z.array(
+			z.object({
+				id: z.string(),
+				kind: z.string(),
+				mime_type: z.string(),
+				size_bytes: z.number().int(),
+				created_at: z.string(),
+			}),
+		),
+	}),
+});
+export const getBugReportScreenshots = async (bugReportId: string) =>
+	(
+		await request(
+			`/api/v1/bug-reports/${enc(bugReportId)}`,
+			BugReportEvidenceSchema,
+		)
+	).bug_report.evidence.filter((item) => item.kind === "screenshot");
+/** What the vision model read from a screenshot (apps/server/src/api/visual-routes.ts). */
+export const getEvidenceObservations = (evidenceId: string) =>
+	request(
+		`/api/v1/evidence/${enc(evidenceId)}/observations`,
+		EvidenceObservationsResponseSchema,
+	);
+/** Queues a (re)read; the answer is a job, not a result. */
+export const requestEvidenceObservation = (evidenceId: string) =>
+	request(`/api/v1/evidence/${enc(evidenceId)}/observations`, z.unknown(), {
+		method: "POST",
+	});
+/** The stored image itself; only the session cookie authorizes it. */
+export const evidenceContentUrl = (evidenceId: string) =>
+	`/api/v1/evidence/${enc(evidenceId)}/content`;
+/** Regions a segmentation model located in a screenshot (apps/server/src/api/visual-routes.ts). */
+export const getEvidenceLocations = (evidenceId: string) =>
+	request(
+		`/api/v1/evidence/${enc(evidenceId)}/locations`,
+		EvidenceLocationsResponseSchema,
+	);
+/** Queues a search for the element a short noun phrase names; the answer is a job, not a result. */
+export const requestEvidenceLocation = (evidenceId: string, phrase: string) =>
+	request(`/api/v1/evidence/${enc(evidenceId)}/locate`, z.unknown(), {
+		method: "POST",
+		body: { phrase },
+	});

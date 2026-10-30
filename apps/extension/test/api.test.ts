@@ -146,7 +146,7 @@ describe("error states", () => {
 			413,
 			"payload_too_large",
 			"The request body is too large",
-			/larger than Tracera accepts \(10 MB\)/,
+			/larger than this Tracera server accepts/,
 		],
 		[
 			415,

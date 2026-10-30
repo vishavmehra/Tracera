@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_MAX_IMAGE_BYTES } from "@tracera/contracts";
 import { z } from "zod";
 
 /** Thrown when environment configuration is invalid. Messages name variables, never their values. */
@@ -147,6 +148,16 @@ const EnvSchema = z
 		),
 		/** Behind a reverse proxy the client address is only in X-Forwarded-For; without it every login is throttled as one address. */
 		TRACERA_TRUST_PROXY: bool(false),
+		/** Model for observe_screenshot; the default depends on the provider (see visionModel). */
+		TRACERA_MODEL_VISION: opt(z.string().max(200).optional()),
+		/** Largest image a model call may carry. Meta accepts up to 50 MB inline. */
+		TRACERA_MAX_IMAGE_BYTES: int(
+			DEFAULT_MAX_IMAGE_BYTES,
+			1_024,
+			50 * 1024 * 1024,
+		),
+		/** Segmentation model used to locate a named UI element in a screenshot; only Meta hosts one. */
+		TRACERA_MODEL_SEGMENT: opt(z.string().max(200).default("sam-3.1")),
 	})
 	.superRefine((env, ctx) => {
 		const require = (key: keyof typeof env, reason: string) => {
@@ -216,6 +227,10 @@ export type Config = {
 		redactEmails: boolean;
 		investigationMaxModelCalls: number;
 		investigationBudgetUsd: number;
+		/** Model for observe_screenshot: Muse Spark on Meta, a Gemma vision model on the Nebius profile. */
+		visionModel: string;
+		maxImageBytes: number;
+		segmentModel: string;
 	};
 	sandboxMode: "docker" | "disabled" | "fake";
 	sandboxImage: string;
@@ -306,6 +321,15 @@ export function loadConfig(
 			redactEmails: e.TRACERA_REDACT_EMAILS,
 			investigationMaxModelCalls: e.TRACERA_INVESTIGATION_MAX_MODEL_CALLS,
 			investigationBudgetUsd: e.TRACERA_INVESTIGATION_BUDGET_USD,
+			visionModel:
+				e.TRACERA_MODEL_VISION ??
+				(provider === "meta"
+					? "muse-spark-1.3"
+					: provider === "openai_compatible"
+						? "google/gemma-3-27b-it"
+						: "mock-vision"),
+			maxImageBytes: e.TRACERA_MAX_IMAGE_BYTES,
+			segmentModel: e.TRACERA_MODEL_SEGMENT,
 		},
 		sandboxMode: e.TRACERA_SANDBOX_MODE,
 		sandboxImage: e.TRACERA_SANDBOX_IMAGE,
@@ -334,6 +358,7 @@ export function describeConfig(config: Config) {
 			name: config.inference.providerName,
 			model: config.inference.reasoningModel,
 			task_models: config.inference.taskModels,
+			vision_model: config.inference.visionModel,
 			escalation:
 				config.inference.escalationEnabled && config.inference.escalationModel
 					? config.inference.escalationModel

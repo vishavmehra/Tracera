@@ -1,6 +1,13 @@
 import { sha256Hex } from "../lib/crypto.ts";
 import { redactSecrets } from "../lib/redact.ts";
 import {
+	DEFAULT_MAX_IMAGE_BYTES,
+	ImageError,
+	type ImageInput,
+	type ImagePart,
+	prepareImage,
+} from "./images.ts";
+import {
 	type ChatMessage,
 	type ChatProvider,
 	type ChatUsage,
@@ -56,6 +63,8 @@ export type GatewayDeps = {
 	redactEmails: boolean;
 	maxConcurrency: number;
 	dailyBudgetUsd: number;
+	/** Largest image a call may carry; defaults to 8 MiB. */
+	maxImageBytes?: number;
 	spentTodayUsd(): Promise<number>;
 	/** Optional scope limits, such as an investigation's call and cost budget. Null means allowed. */
 	checkLimits?: () => Promise<{ code: string; message: string } | null>;
@@ -67,6 +76,7 @@ export type GatewayDeps = {
 export type Gateway = ReturnType<typeof createGateway>;
 
 const MAX_TRANSPORT_ATTEMPTS = 3;
+const MAX_IMAGES_PER_CALL = 4;
 
 /**
  * The only path to a model: budget check, secret redaction, bounded retries with
@@ -91,17 +101,41 @@ export function createGateway(deps: GatewayDeps) {
 
 	async function run<T>(
 		task: TaskDefinition<T>,
-		input: { user: string; cacheKey?: string; signal?: AbortSignal },
+		input: {
+			user: string;
+			cacheKey?: string;
+			signal?: AbortSignal;
+			/** Redaction applies to `user`; pixels are sent as they are. */
+			images?: ImageInput[];
+		},
 	): Promise<{ output: T; modelExecutionId: string; usage: ChatUsage }> {
 		const started = Date.now();
 		const redacted = redactSecrets(input.user, {
 			redactEmails: deps.redactEmails,
 		});
+		let images: ImagePart[] = [];
+		let imageError: ImageError | null = null;
+		try {
+			if ((input.images?.length ?? 0) > MAX_IMAGES_PER_CALL)
+				throw new ImageError(
+					"image_too_large",
+					`A call carries at most ${MAX_IMAGES_PER_CALL} images`,
+				);
+			images = (input.images ?? []).map((image) =>
+				prepareImage(image, deps.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES),
+			);
+		} catch (error) {
+			if (!(error instanceof ImageError)) throw error;
+			imageError = error;
+		}
 		const requestHash = sha256Hex(
 			JSON.stringify({
 				model: deps.model,
 				task: task.promptVersion,
 				user: redacted.text,
+				...(images.length > 0
+					? { images: images.map((image) => sha256Hex(image.data)) }
+					: {}),
 			}),
 		);
 		const usage: ChatUsage = {
@@ -130,6 +164,14 @@ export function createGateway(deps: GatewayDeps) {
 				attempts,
 				error,
 			});
+
+		if (imageError) {
+			const id = await finish("failed", {
+				code: imageError.code,
+				message: imageError.message,
+			});
+			throw new InferenceError(imageError.code, imageError.message, false, id);
+		}
 
 		if ((await deps.spentTodayUsd()) >= deps.dailyBudgetUsd) {
 			const id = await finish("budget_exceeded", {
@@ -197,7 +239,11 @@ export function createGateway(deps: GatewayDeps) {
 		try {
 			const messages: ChatMessage[] = [
 				{ role: "system", content: task.systemPrompt },
-				{ role: "user", content: redacted.text },
+				{
+					role: "user",
+					content: redacted.text,
+					...(images.length > 0 ? { images } : {}),
+				},
 			];
 			let result = await call(messages);
 			let parsed = validate(task, result.content, result.finishReason);

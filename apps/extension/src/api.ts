@@ -100,7 +100,7 @@ export function describeError(
 			"Not found. It may have been deleted, or it belongs to another workspace."
 		);
 	if (status === 413)
-		return "The screenshot is larger than Tracera accepts (10 MB). Select a smaller region and try again.";
+		return "The screenshot is larger than this Tracera server accepts. Select a smaller region and try again.";
 	if (status === 415)
 		return detail ?? "Tracera does not accept this file type.";
 	if (status === 429)

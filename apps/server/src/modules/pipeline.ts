@@ -121,6 +121,7 @@ import {
 	reproductionCheck,
 	suiteCheck,
 } from "./verification.ts";
+import { screenshotEvidenceItems } from "./visual-evidence.ts";
 import {
 	applyEdits,
 	applyStoredDiff,
@@ -1342,7 +1343,18 @@ async function collectContextStage(ctx: StageContext): Promise<StageOutcome> {
 			return fatal(failure(error.code, error.message, error.retryable));
 		throw error;
 	}
-	const items = [...reportEvidenceItems(bug, assetTexts), ...pack.items];
+	const visual = await screenshotEvidenceItems(ctx, {
+		workspaceId: ctx.row.workspaceId,
+		bugReportId: bug.id,
+		investigationId: ctx.row.id,
+		signal: ctx.signal,
+	});
+	pack.limitations.push(...visual.limitations);
+	const items = [
+		...reportEvidenceItems(bug, assetTexts),
+		...visual.items,
+		...pack.items,
+	];
 	const stored = await storeText(ctx.config, JSON.stringify(pack));
 	const count = (prefix: string) =>
 		items.filter((item) => item.handle.startsWith(`${prefix}-`)).length;

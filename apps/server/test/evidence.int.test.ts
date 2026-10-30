@@ -3,6 +3,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { auditEvents, evidenceAssets } from "../src/db/schema.ts";
+import { QUEUES } from "../src/queue.ts";
 import {
 	asSession,
 	asToken,
@@ -134,8 +135,14 @@ describe("screenshot evidence upload", () => {
 			size_bytes: PNG.length,
 			captured_at: META.captured_at,
 			captured_at_client_reported: true,
-			content_url: null,
+			content_url: `/api/v1/evidence/${evidence.id}/content`,
 		});
+		// The upload schedules the read of the screenshot.
+		const queued = await ctx.pool.query(
+			"SELECT 1 FROM pgboss.job WHERE name = $1 AND data->>'evidenceId' = $2",
+			[QUEUES.observe, evidence.id],
+		);
+		expect(queued.rowCount).toBe(1);
 		// The query string and fragment never reach storage.
 		expect(evidence.provenance).toMatchObject({
 			channel: "extension",
@@ -212,6 +219,16 @@ describe("screenshot evidence upload", () => {
 			expect(response.statusCode).toBe(415);
 			expect(response.json().code).toBe("unsupported_media_type");
 		}
+
+		// Above what a model call may carry but below the hard upload limit: refused now, not stored and
+		// then unreadable.
+		const aboveImageLimit = await send(
+			Buffer.concat([PNG, Buffer.alloc(9 * 1024 * 1024)]),
+			"image/png",
+		);
+		expect(aboveImageLimit.statusCode).toBe(413);
+		expect(aboveImageLimit.json().code).toBe("payload_too_large");
+		expect(aboveImageLimit.json().detail).toContain("8 MB");
 
 		const oversized = Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]);
 		const tooLarge = await send(oversized, "image/png");

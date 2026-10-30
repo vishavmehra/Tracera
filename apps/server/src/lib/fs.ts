@@ -54,3 +54,14 @@ export async function readBlobUtf8(
 		"utf8",
 	).catch(() => null);
 }
+
+/** A blob written by putBlob, as bytes; null when the hash is malformed or the blob is missing. */
+export async function readBlobBytes(
+	dir: string,
+	sha256: string | null | undefined,
+): Promise<Buffer | null> {
+	if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null;
+	return readFile(
+		path.join(dir, "sha256", sha256.slice(0, 2), sha256.slice(2, 4), sha256),
+	).catch(() => null);
+}

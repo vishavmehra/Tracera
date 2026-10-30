@@ -21,6 +21,7 @@
 - Review and approval of patches, resolution reports, and an audit trail.
 - Authorized actions on an approved patch, each a separate request from a signed-in owner: download the reviewed diff, apply it to a local working tree, commit it to a new branch, and push that branch (never forced, never to the default branch). They act on repositories registered as local paths, so they are a local feature. Pull requests are not built.
 - A web workspace (React) for repositories, graph exploration, questions, impact, investigations, and review.
+- Screenshot understanding: a vision model reads an attached screenshot (from the extension or the new-investigation form) into derived evidence of visible text, error messages, and interface elements, labelled `[mock]` or `[live]` and kept apart from what is merely inferred. On request, a segmentation model can mark where a named element sits in the screenshot (only the Meta provider hosts one; other providers answer that the capability is unavailable).
 - Meeting transcripts: upload a WebVTT, SRT, or plain-text transcript (or import one from Google Meet), review the bug candidates a model proposes with quotes from the transcript, and turn confirmed ones into bug reports and investigations (see below).
 - A Chrome extension (Manifest V3) that captures a screenshot of the current tab, lets you black out regions, and files a bug report with that evidence (see below). It works with a local or a hosted API: the API origin is fixed when you build it.
 - A local stdio MCP server so coding agents can use Tracera (see below).
@@ -72,6 +73,10 @@ TRACERA_META_API_KEY=<key, when the provider is meta>
 TRACERA_OPENAI_COMPAT_BASE_URL=<base url>
 TRACERA_OPENAI_COMPAT_API_KEY=<key>
 TRACERA_MODEL_REASONING=<model id>
+# screenshots (optional): vision model, largest image in bytes, segmentation model:
+TRACERA_MODEL_VISION=<model id, default depends on the provider>
+TRACERA_MAX_IMAGE_BYTES=<default 8388608>
+TRACERA_MODEL_SEGMENT=<model id, default sam-3.1>
 # meetings (optional; Google Meet import needs all four of the Google values and the key):
 TRACERA_MODEL_MEETING=<model id, default TRACERA_MODEL_REASONING>
 GOOGLE_CLIENT_ID=<OAuth client id>
@@ -127,7 +132,7 @@ TRACERA_EXTENSION_DEFAULT_API_URL=<API origin, default http://127.0.0.1:8787> TR
 
 Then open `chrome://extensions`, enable developer mode, and load `apps/extension/dist` unpacked. Create the token with `POST /api/v1/tokens` and client kind `extension`; the full flow also needs the scopes `repositories:read`, `investigations:write`, and `investigations:read`, which you can grant by sending a `scopes` list. `npm run test:extension` runs its unit tests and `npm run typecheck:extension` its type check.
 
-The upload endpoint is `POST /api/v1/bug-reports/{id}/evidence` (`multipart/form-data`: one `file` part and one `meta` JSON part), for PNG, JPEG, and WebP screenshots up to 10 MB. The server checks the actual bytes, not the declared type. Page details and redaction regions are stored as client-reported provenance, because the server cannot see what the extension blacked out.
+The upload endpoint is `POST /api/v1/bug-reports/{id}/evidence` (`multipart/form-data`: one `file` part and one `meta` JSON part), for PNG, JPEG, and WebP screenshots up to `TRACERA_MAX_IMAGE_BYTES` (8 MB by default, so an image that uploads can always be read by the vision model). The server checks the actual bytes, not the declared type, and queues the read of the screenshot with the upload. Page details and redaction regions are stored as client-reported provenance, because the server cannot see what the extension blacked out.
 
 ## Meetings and Google Meet
 
