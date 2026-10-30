@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { IndexRepositoryRequest } from "@tracera/contracts";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
@@ -601,10 +601,16 @@ export async function requestIndex(
 			.where(bySha)
 			.for("update")
 			.limit(1);
+		// A ready snapshot is only fully usable with its mirror (search and source excerpts read it). Where
+		// the data directory is temporary the mirror disappears, and indexing again is what restores it.
+		const mirrorGone =
+			existing?.status === "ready" &&
+			!(await stat(mirrorPath(deps.config, existing.id)).catch(() => null));
 		if (
 			existing &&
 			existing.status !== "failed" &&
-			existing.status !== "cancelled"
+			existing.status !== "cancelled" &&
+			!mirrorGone
 		)
 			return { status: 200 as const, snapshot: toSnapshotView(existing) };
 		let id = existing?.id;

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupBenchShop } from "../../../scripts/bench-setup.ts";
@@ -164,6 +165,45 @@ describe("repository knowledge graph [static analysis, no execution]", () => {
 		);
 		expect(again.statusCode).toBe(200);
 		expect(again.json().snapshot.id).toBe(snapshot?.id);
+	});
+
+	it("indexes a ready snapshot again when its mirror is gone, which brings search back", async () => {
+		const { repository, snapshot } = await registerBenchShop();
+		expect(await drainIndexJobs()).toBe(1);
+		const search = () =>
+			session("GET", `/api/v1/repositories/${repository.id}/search?q=shipping`);
+		expect((await search()).statusCode).toBe(200);
+
+		// What a host with a temporary data directory looks like after a restart.
+		await rm(mirrorPath(ctx.config, snapshot?.id ?? ""), {
+			recursive: true,
+			force: true,
+		});
+		const lost = await search();
+		expect(lost.statusCode).toBe(409);
+		expect(lost.json().code).toBe("snapshot_source_unavailable");
+
+		const again = await session(
+			"POST",
+			`/api/v1/repositories/${repository.id}/index`,
+			{},
+		);
+		expect(again.statusCode).toBe(202);
+		expect(again.json().snapshot).toMatchObject({
+			id: snapshot?.id,
+			status: "queued",
+		});
+		expect(await drainIndexJobs()).toBe(1);
+		expect(existsSync(mirrorPath(ctx.config, snapshot?.id ?? ""))).toBe(true);
+		expect((await search()).statusCode).toBe(200);
+
+		// With the mirror back, asking again changes nothing.
+		const settled = await session(
+			"POST",
+			`/api/v1/repositories/${repository.id}/index`,
+			{},
+		);
+		expect(settled.statusCode).toBe(200);
 	});
 
 	it("returns nodes with source evidence, neighbours, and graph-supported impact", async () => {
