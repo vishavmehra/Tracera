@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RecordingFrameTagSchema } from "./recording.ts";
 
 /** Images accepted as evidence. The stored type comes from the file's magic bytes, never the client. */
 export const IMAGE_EVIDENCE_MIME_TYPES = [
@@ -41,6 +42,8 @@ export const ScreenshotEvidenceMetaSchema = z.strictObject({
 	client_redactions: z.array(PixelRectSchema).max(100).optional(),
 	/** Outlines the user drew: marks in the image, not page content. */
 	client_annotations: z.array(PixelRectSchema).max(100).optional(),
+	/** Set when the image is a keyframe the browser took from a screen recording; the recording itself is never uploaded. */
+	source_recording: RecordingFrameTagSchema.optional(),
 });
 
 export type PixelRect = z.infer<typeof PixelRectSchema>;

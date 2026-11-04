@@ -12,6 +12,7 @@ export * from "./investigations.ts";
 export * from "./meetings.ts";
 export * from "./patch-impact.ts";
 export * from "./publication.ts";
+export * from "./recording.ts";
 export * from "./repositories.ts";
 export * from "./runtime-evidence.ts";
 export * from "./specialists.ts";

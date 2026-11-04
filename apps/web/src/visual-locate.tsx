@@ -93,7 +93,7 @@ export function useLocator(evidenceId: string, version: number | undefined) {
 export function RegionOverlay({
 	locations,
 }: {
-	locations: EvidenceLocation[];
+	locations: Pick<EvidenceLocation, "id" | "phrase" | "boxes">[];
 }) {
 	return (
 		<>

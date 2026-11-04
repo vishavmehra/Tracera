@@ -70,11 +70,13 @@ import {
 	tdClass,
 	thClass,
 } from "./ui.tsx";
+import { ScreenshotField, uploadScreenshot } from "./visual-evidence.tsx";
 import {
-	ScreenshotEvidence,
-	ScreenshotField,
-	uploadScreenshot,
-} from "./visual-evidence.tsx";
+	RecordingField,
+	UploadStatus,
+	useRecordingUpload,
+	VisualEvidence,
+} from "./visual-recording.tsx";
 
 /** Statuses where the worker is still moving the investigation forward by itself. */
 const WORKING: ReadonlySet<InvestigationStatus> = new Set([
@@ -234,6 +236,16 @@ export function NewInvestigationPage() {
 		},
 	});
 	const report = useMutation({ mutationFn: createBugReport });
+	const recordingUpload = useRecordingUpload();
+	const [recording, setRecording] = useState<File | null>(null);
+	// The keyframes go before the investigation starts so its first stage can read them.
+	const sendRecording = (id: string, file: File | null) =>
+		file
+			? recordingUpload.mutateAsync({ bugReportId: id, file }).then(
+					() => true,
+					() => false,
+				)
+			: Promise.resolve(true);
 	const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
@@ -271,13 +283,17 @@ export function NewInvestigationPage() {
 			.catch(() => null);
 		if (!created) return;
 		setBugReportId(created.bug_report.id);
+		let screenshotFailed = false;
 		if (screenshot && screenshot.size > 0)
 			try {
 				await uploadScreenshot(created.bug_report.id, screenshot);
 			} catch (error) {
 				setScreenshotError(error);
-				return;
+				screenshotFailed = true;
 			}
+		// Sent even when the screenshot failed, so a later start without the screenshot keeps the recording.
+		const recordingSent = await sendRecording(created.bug_report.id, recording);
+		if (screenshotFailed || !recordingSent) return;
 		investigate.mutate({ bug_report_id: created.bug_report.id, ...chosen });
 	};
 	const active =
@@ -410,6 +426,7 @@ export function NewInvestigationPage() {
 									"Redacted on the server before any model sees it.",
 								)}
 								<ScreenshotField />
+								<RecordingField onFile={setRecording} />
 							</fieldset>
 							<fieldset className="min-w-0 space-y-5 lg:border-line lg:border-l lg:pl-8">
 								<legend className="mb-1 font-semibold text-base">
@@ -479,7 +496,7 @@ export function NewInvestigationPage() {
 											title="The bug report was saved, but its screenshot could not be attached"
 											error={screenshotError}
 										/>
-										{bugReportId && options && (
+										{bugReportId && options && !recordingUpload.error && (
 											<button
 												type="button"
 												className={buttonClass}
@@ -497,6 +514,46 @@ export function NewInvestigationPage() {
 										)}
 									</div>
 								)}
+								<UploadStatus
+									upload={recordingUpload}
+									title="The bug report was saved, but its recording could not be sent"
+								/>
+								{recordingUpload.error &&
+									bugReportId &&
+									options &&
+									recording && (
+										<div className="flex flex-wrap gap-2">
+											<button
+												type="button"
+												className={buttonClass}
+												onClick={async () => {
+													if (
+														(await sendRecording(bugReportId, recording)) &&
+														screenshotError === null
+													)
+														investigate.mutate({
+															bug_report_id: bugReportId,
+															...options,
+														});
+												}}
+											>
+												Try sending the recording again
+											</button>
+											<button
+												type="button"
+												className={buttonClass}
+												onClick={() => {
+													recordingUpload.reset();
+													investigate.mutate({
+														bug_report_id: bugReportId,
+														...options,
+													});
+												}}
+											>
+												Start without the recording
+											</button>
+										</div>
+									)}
 								{investigate.error && (
 									<div className="space-y-2">
 										<ErrorNotice
@@ -534,15 +591,18 @@ export function NewInvestigationPage() {
 									className={`${primaryButtonClass} w-full`}
 									disabled={
 										report.isPending ||
+										recordingUpload.isPending ||
 										investigate.isPending ||
 										bugReportId !== null
 									}
 								>
 									{report.isPending
 										? "Saving the report…"
-										: investigate.isPending
-											? "Starting…"
-											: "Start investigation"}
+										: recordingUpload.isPending
+											? "Sending the recording…"
+											: investigate.isPending
+												? "Starting…"
+												: "Start investigation"}
 								</button>
 							</fieldset>
 						</form>
@@ -1822,7 +1882,7 @@ export function InvestigationPage() {
 										</QueryView>
 									</Section>
 
-									<ScreenshotEvidence
+									<VisualEvidence
 										bugReportId={data.bug_report_id}
 										version={data.state_version}
 										active={WORKING.has(data.status)}

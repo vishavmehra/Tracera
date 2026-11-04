@@ -587,7 +587,9 @@ describe("screenshots in an investigation [mock inference]", () => {
 		const deps = worker(provider);
 		await run(deps, investigation.id, "normalize");
 		await run(deps, investigation.id, "collect_context");
-		expect(seen[0]).toContain("1 attached screenshot(s) could not be read");
+		expect(seen[0]).toContain(
+			"1 attached screenshot(s) or recording(s) could not be read",
+		);
 		expect(seen[0]).not.toContain("No screenshots are provided");
 		const [step] = await ctx.db
 			.select()

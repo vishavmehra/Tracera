@@ -102,6 +102,9 @@ const BODY: Record<string, unknown> = {
 	},
 	"POST /api/v1/investigations": { bug_report_id: newId("bug") },
 	"POST /api/v1/evidence/:id/locate": { phrase: "button" },
+	"POST /api/v1/bug-reports/:id/recordings": {
+		recording_id: "recording_abc123",
+	},
 	"POST /api/v1/bug-reports": {
 		title: "Matrix report",
 		description: "Created by the security matrix",

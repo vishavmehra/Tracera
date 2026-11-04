@@ -214,10 +214,10 @@ export async function listObservations(
  * Model output is text transcribed from pixels, so it can carry a secret the image showed. Redaction
  * runs on the output before anything is stored or shown, as it does on every text sent to a model.
  */
-function redactOutput(
-	output: ScreenshotObservationOutput,
+export function redactOutput<T>(
+	output: T,
 	redactEmails: boolean,
-): { output: ScreenshotObservationOutput; count: number } {
+): { output: T; count: number } {
 	let count = 0;
 	const walk = (value: unknown): unknown => {
 		if (typeof value === "string") {
@@ -232,7 +232,7 @@ function redactOutput(
 			);
 		return value;
 	};
-	return { output: walk(output) as ScreenshotObservationOutput, count };
+	return { output: walk(output) as T, count };
 }
 
 /**
@@ -240,14 +240,13 @@ function redactOutput(
  * investigation stage never read the same image twice. The lock dies with its connection, so a crashed
  * worker cannot leave one behind. Returns null when another worker still holds it after the wait.
  */
-async function withReadLock<T>(
+export async function withReadLock<T>(
 	pool: pg.Pool,
-	evidenceId: string,
+	key: string,
 	signal: AbortSignal | undefined,
 	work: () => Promise<T>,
 ): Promise<T | null> {
 	const client = await pool.connect();
-	const key = `observe_screenshot:${evidenceId}`;
 	let broken = false;
 	try {
 		const deadline = Date.now() + LOCK_WAIT_MS;
@@ -298,17 +297,22 @@ export async function observeEvidenceAsset(
 		options.evidenceId,
 	);
 	if (!asset || !isObservableImage(asset)) return null;
-	return withReadLock(deps.pool, asset.id, options.signal, async () => {
-		const [latest] = await observationsOf(
-			deps.db,
-			deps.config,
-			asset.workspaceId,
-			asset.id,
-			1,
-		);
-		if (latest?.status === "succeeded") return latest;
-		return readScreenshot(deps, asset, options);
-	});
+	return withReadLock(
+		deps.pool,
+		`observe_screenshot:${asset.id}`,
+		options.signal,
+		async () => {
+			const [latest] = await observationsOf(
+				deps.db,
+				deps.config,
+				asset.workspaceId,
+				asset.id,
+				1,
+			);
+			if (latest?.status === "succeeded") return latest;
+			return readScreenshot(deps, asset, options);
+		},
+	);
 }
 
 async function readScreenshot(
@@ -451,6 +455,8 @@ async function readBugReportScreenshots(
 				eq(evidenceAssets.workspaceId, scope.workspaceId),
 				eq(evidenceAssets.bugReportId, scope.bugReportId),
 				eq(evidenceAssets.kind, "screenshot"),
+				// Frames of a recording are read together by their recording, not as separate screenshots.
+				sql`${evidenceAssets.provenance}->'source_recording' is null`,
 			),
 		)
 		.orderBy(asc(evidenceAssets.createdAt), asc(evidenceAssets.id));

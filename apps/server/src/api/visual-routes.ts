@@ -1,7 +1,13 @@
 import path from "node:path";
-import { idSchema, LocateRequestSchema } from "@tracera/contracts";
+import {
+	idSchema,
+	LocateRequestSchema,
+	RecordingRetryRequestSchema,
+} from "@tracera/contracts";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { withTransaction } from "../db/client.ts";
+import { bugReports } from "../db/schema.ts";
 import { readBlobBytes } from "../lib/fs.ts";
 import { AppError, createRateLimiter } from "../lib/http.ts";
 import { audit } from "../modules/audit.ts";
@@ -15,6 +21,7 @@ import {
 	listLocations,
 	segmentationAvailable,
 } from "../modules/visual-locate.ts";
+import { getRecordings, retryRecording } from "../modules/visual-recording.ts";
 import { enqueueLocate, enqueueObserve } from "../queue.ts";
 import { type AppDeps, authOf } from "./app.ts";
 
@@ -113,6 +120,51 @@ export function registerVisualRoutes(app: FastifyInstance, deps: AppDeps) {
 				requestId: request.id,
 			});
 		});
+		return reply.status(202).send({ job: { status: "queued" } });
+	});
+
+	// ---- Screen recordings: the browser sends keyframes through the screenshot upload, never the recording ----
+	const bugId = (request: FastifyRequest) => {
+		const id = (request.params as { id?: string }).id ?? "";
+		if (!idSchema("bug").safeParse(id).success)
+			throw new AppError(404, "not_found", `Bug report ${id} was not found`);
+		return id;
+	};
+	const ownBug = async (workspaceId: string, id: string) => {
+		const [report] = await db
+			.select({ id: bugReports.id })
+			.from(bugReports)
+			.where(
+				and(eq(bugReports.id, id), eq(bugReports.workspaceId, workspaceId)),
+			)
+			.limit(1);
+		if (!report)
+			throw new AppError(404, "not_found", `Bug report ${id} was not found`);
+	};
+	app.get("/api/v1/bug-reports/:id/recordings", async (request) => {
+		const auth = authOf(request);
+		requireScope(auth, "reports:read");
+		const id = bugId(request);
+		await ownBug(auth.workspaceId, id);
+		return { recordings: await getRecordings(deps, auth.workspaceId, id) };
+	});
+
+	app.post("/api/v1/bug-reports/:id/recordings", async (request, reply) => {
+		const auth = authOf(request);
+		requireScope(auth, "reports:write");
+		const id = bugId(request);
+		await ownBug(auth.workspaceId, id);
+		const input = RecordingRetryRequestSchema.parse(request.body);
+		const quota = reads.take(auth.workspaceId);
+		if (!quota.allowed) {
+			reply.header("retry-after", String(quota.retryAfterSeconds));
+			throw new AppError(
+				429,
+				"rate_limited",
+				`Too many requests for this workspace; try again in ${quota.retryAfterSeconds} s`,
+			);
+		}
+		await retryRecording(deps, auth, id, input.recording_id, request.id);
 		return reply.status(202).send({ job: { status: "queued" } });
 	});
 

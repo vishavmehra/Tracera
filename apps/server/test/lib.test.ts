@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { idSchema, NormalizationOutputSchema } from "@tracera/contracts";
@@ -220,6 +220,22 @@ describe("paths and blobs", () => {
 		expect(first.path.replaceAll("\\", "/")).toContain(
 			`/sha256/${first.sha256.slice(0, 2)}/`,
 		);
+	});
+
+	it("stores identical content written by many callers at once", async () => {
+		const dir = mkdtempSync(path.join(tmpdir(), "tracera-blob-"));
+		const content = Buffer.from("the same located box");
+		const stored = await Promise.all(
+			Array.from({ length: 24 }, () => putBlob(dir, content)),
+		);
+		expect(new Set(stored.map((blob) => blob.path)).size).toBe(1);
+		expect(readFileSync(stored[0]?.path ?? "", "utf8")).toBe(
+			"the same located box",
+		);
+		const leftovers = readdirSync(path.dirname(stored[0]?.path ?? "")).filter(
+			(name) => name.endsWith(".tmp"),
+		);
+		expect(leftovers).toEqual([]);
 	});
 
 	it("replaces an existing blob whose bytes no longer match its name", async () => {

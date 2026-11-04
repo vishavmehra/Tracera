@@ -30,6 +30,7 @@ import {
 } from "../modules/patch-analysis.ts";
 import { observeEvidenceAsset } from "../modules/visual-evidence.ts";
 import { locateInEvidence } from "../modules/visual-locate.ts";
+import { processRecording } from "../modules/visual-recording.ts";
 import { workspacesRoot } from "../modules/workspace.ts";
 import {
 	type AssessJob,
@@ -40,6 +41,7 @@ import {
 	type ObserveJob,
 	type PatchImpactJob,
 	QUEUES,
+	type RecordingJob,
 	type StageJob,
 } from "../queue.ts";
 import { createDockerExecutor } from "../sandbox/docker.ts";
@@ -144,6 +146,14 @@ export async function handleLocateJob(
 		evidenceId: job.evidenceId,
 		phrase: job.phrase,
 	});
+}
+
+/** Failures are stored with the recording; the job itself does not fail on them. */
+export async function handleRecordingJob(
+	deps: WorkerDeps,
+	job: RecordingJob,
+): Promise<void> {
+	await processRecording(deps, job);
 }
 
 export async function handleStageJob(
@@ -271,6 +281,13 @@ export async function startWorker(
 		{ batchSize: 1 },
 		async ([job]) => {
 			if (job) await handleLocateJob(deps, job.data);
+		},
+	);
+	await deps.boss.work<RecordingJob>(
+		QUEUES.recording,
+		{ batchSize: 1 },
+		async ([job]) => {
+			if (job) await handleRecordingJob(deps, job.data);
 		},
 	);
 	const heartbeat = setInterval(() => {

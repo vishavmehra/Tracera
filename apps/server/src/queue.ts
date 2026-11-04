@@ -11,6 +11,7 @@ export const QUEUES = {
 	dependencies: "dependencies.prepare",
 	observe: "evidence.observe",
 	locate: "evidence.locate",
+	recording: "evidence.recording",
 } as const;
 
 export type NormalizeJob = { bugReportId: string; workspaceId: string };
@@ -19,6 +20,11 @@ export type AssessJob = { assessmentId: string };
 export type PatchImpactJob = { analysisId: string };
 export type DependencyPrepareJob = { snapshotId: string };
 export type ObserveJob = { evidenceId: string; workspaceId: string };
+export type RecordingJob = {
+	workspaceId: string;
+	bugReportId: string;
+	recordingId: string;
+};
 export type LocateJob = {
 	evidenceId: string;
 	workspaceId: string;
@@ -59,6 +65,8 @@ export async function startQueue(
 		// One vision call: a few attempts of at most TRACERA_LLM_TIMEOUT_MS each.
 		[QUEUES.observe, 900],
 		[QUEUES.locate, 600],
+		// Up to twelve frame readings, one analysis, and a few segmentation calls.
+		[QUEUES.recording, 1800],
 	];
 	for (const [name, expireInSeconds] of queues) {
 		if (await boss.getQueue(name)) continue;
@@ -110,3 +118,10 @@ export const enqueueObserve = (boss: PgBoss, db: QueueDb, job: ObserveJob) =>
 /** Locates a named UI element in one screenshot with the segmentation model. */
 export const enqueueLocate = (boss: PgBoss, db: QueueDb, job: LocateJob) =>
 	boss.send(QUEUES.locate, job, { db });
+
+/** Reads the keyframes of one screen recording and analyzes them together. */
+export const enqueueRecording = (
+	boss: PgBoss,
+	db: QueueDb,
+	job: RecordingJob,
+) => boss.send(QUEUES.recording, job, { db });

@@ -18,6 +18,11 @@ import { audit } from "./audit.ts";
 import { type AuthContext, actorOf, sourceChannelOf } from "./auth.ts";
 import { stripUrl } from "./bug-reports.ts";
 import { idempotent } from "./idempotency.ts";
+import {
+	frameFilename,
+	heldFrame,
+	queueWhenComplete,
+} from "./visual-recording.ts";
 
 const EVIDENCE_RETENTION_DAYS = 90;
 
@@ -35,10 +40,29 @@ export function detectImageType(
 	return null;
 }
 
+type EvidenceRow = typeof evidenceAssets.$inferSelect;
+
+const evidenceBody = (row: EvidenceRow) => ({
+	evidence: {
+		id: row.id,
+		kind: row.kind,
+		origin: row.origin,
+		mime_type: row.mimeType,
+		size_bytes: row.sizeBytes,
+		captured_at: row.capturedAt?.toISOString() ?? null,
+		captured_at_client_reported: row.capturedAt !== null,
+		provenance: row.provenance,
+		content_url: `/api/v1/evidence/${row.id}/content`,
+		created_at: row.createdAt.toISOString(),
+	},
+});
+
 /**
  * Stores a screenshot for a bug report. The stored type is the detected one; a
  * declared type that disagrees with the bytes is rejected. Page context and redaction regions are kept
- * as client-reported provenance: the server cannot see what the client blacked out.
+ * as client-reported provenance: the server cannot see what the client blacked out. A keyframe of a screen
+ * recording is stored the same way, tagged with its recording; it is read by the recording's analysis
+ * instead of on its own, and a frame sent twice is stored once.
  */
 export async function addScreenshotEvidence(
 	deps: { pool: pg.Pool; db: Db; boss: PgBoss; config: Config },
@@ -99,6 +123,7 @@ export async function addScreenshotEvidence(
 		file.bytes,
 	);
 	const actor = actorOf(ctx);
+	const frame = meta.source_recording;
 	return idempotent(
 		deps,
 		{
@@ -109,6 +134,10 @@ export async function addScreenshotEvidence(
 			body: { meta, sha256: blob.sha256 },
 		},
 		async ({ db, queueDb }) => {
+			const held = frame
+				? await heldFrame(db, ctx.workspaceId, bugReportId, frame)
+				: null;
+			if (held) return { status: 200, body: evidenceBody(held) };
 			const [row] = await db
 				.insert(evidenceAssets)
 				.values({
@@ -123,7 +152,9 @@ export async function addScreenshotEvidence(
 					blobSha256: blob.sha256,
 					mimeType,
 					sizeBytes: blob.size,
-					originalFilename: file.name.slice(0, 200) || null,
+					originalFilename: frame
+						? frameFilename(frame)
+						: file.name.slice(0, 200) || null,
 					capturedAt: meta.captured_at ? new Date(meta.captured_at) : null,
 					provenance: {
 						channel: sourceChannelOf(ctx),
@@ -137,6 +168,7 @@ export async function addScreenshotEvidence(
 						...(meta.client_annotations && {
 							client_annotations: meta.client_annotations,
 						}),
+						...(frame && { source_recording: frame }),
 					},
 					redactions: {
 						applied_by: "client",
@@ -161,31 +193,27 @@ export async function addScreenshotEvidence(
 					mime_type: mimeType,
 					size_bytes: blob.size,
 					client_redactions: meta.client_redactions?.length ?? 0,
+					...(frame && {
+						source_recording: frame.recording_id,
+						frame: `${frame.index + 1}/${frame.count}`,
+					}),
 				},
 				requestId: request.requestId,
 			});
 			// Queued with the upload, so a stored screenshot is never left without its read being scheduled.
-			await enqueueObserve(deps.boss, queueDb, {
-				evidenceId: row.id,
-				workspaceId: ctx.workspaceId,
-			});
-			return {
-				status: 201,
-				body: {
-					evidence: {
-						id: row.id,
-						kind: row.kind,
-						origin: row.origin,
-						mime_type: row.mimeType,
-						size_bytes: row.sizeBytes,
-						captured_at: row.capturedAt?.toISOString() ?? null,
-						captured_at_client_reported: row.capturedAt !== null,
-						provenance: row.provenance,
-						content_url: `/api/v1/evidence/${row.id}/content`,
-						created_at: row.createdAt.toISOString(),
-					},
-				},
-			};
+			if (frame)
+				await queueWhenComplete(
+					deps.boss,
+					{ db, queueDb },
+					{ workspaceId: ctx.workspaceId, bugReportId },
+					frame,
+				);
+			else
+				await enqueueObserve(deps.boss, queueDb, {
+					evidenceId: row.id,
+					workspaceId: ctx.workspaceId,
+				});
+			return { status: 201, body: evidenceBody(row) };
 		},
 	);
 }

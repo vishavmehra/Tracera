@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sha256Hex } from "./crypto.ts";
 
@@ -16,7 +16,8 @@ export function isPathInside(parent: string, child: string): boolean {
 
 /**
  * Content-addressed blob store: <dir>/sha256/<aa>/<bb>/<hash>. Writes are atomic and
- * idempotent; an existing file whose bytes no longer match its name is replaced, never trusted.
+ * idempotent; an existing file whose bytes no longer match its name is replaced, never trusted. Two writers
+ * of identical content at the same moment both succeed.
  */
 export async function putBlob(
 	dir: string,
@@ -38,7 +39,18 @@ export async function putBlob(
 		await mkdir(path.dirname(target), { recursive: true });
 		const temp = `${target}.${randomBytes(6).toString("hex")}.tmp`;
 		await writeFile(temp, content, { flag: "wx" });
-		await rename(temp, target);
+		try {
+			await rename(temp, target);
+		} catch (error) {
+			// Windows refuses to replace a file that another writer has just put there or still has open. The
+			// name is the hash, so intact content under it means the blob is stored.
+			const stored = await readFile(target).then(
+				(existing) => sha256Hex(existing) === sha256,
+				() => false,
+			);
+			await rm(temp, { force: true });
+			if (!stored) throw error;
+		}
 	}
 	return { sha256, path: target, size: content.length };
 }

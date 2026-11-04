@@ -558,6 +558,9 @@ function requestFor(method: Method, routePath: string) {
 			trace: `TypeError: boom\n    at averageOrderValueCents (${B3.file}:3:10)`,
 		},
 		"POST /api/v1/evidence/:id/locate": { phrase: "button" },
+		"POST /api/v1/bug-reports/:id/recordings": {
+			recording_id: "recording_abc123",
+		},
 		"POST /api/v1/patches/:id/approval": {
 			decision: "approved",
 			verification_id: ids.verifications,

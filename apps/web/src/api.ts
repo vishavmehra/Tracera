@@ -19,6 +19,7 @@ import {
 	type PatchImpactRequest,
 	type Problem,
 	ProblemSchema,
+	RecordingsResponseSchema,
 	RuntimeEvidenceResponseSchema,
 	type UpdateMeetingCandidateRequest,
 	type UploadMeetingTranscriptRequest,
@@ -518,17 +519,21 @@ const BugReportEvidenceSchema = z.object({
 				mime_type: z.string(),
 				size_bytes: z.number().int(),
 				created_at: z.string(),
+				provenance: z.record(z.string(), z.unknown()).optional(),
 			}),
 		),
 	}),
 });
+/** Screenshots a person attached. The keyframes of a recording are shown with their recording instead. */
 export const getBugReportScreenshots = async (bugReportId: string) =>
 	(
 		await request(
 			`/api/v1/bug-reports/${enc(bugReportId)}`,
 			BugReportEvidenceSchema,
 		)
-	).bug_report.evidence.filter((item) => item.kind === "screenshot");
+	).bug_report.evidence.filter(
+		(item) => item.kind === "screenshot" && !item.provenance?.source_recording,
+	);
 /** What the vision model read from a screenshot (apps/server/src/api/visual-routes.ts). */
 export const getEvidenceObservations = (evidenceId: string) =>
 	request(
@@ -554,6 +559,25 @@ export const requestEvidenceLocation = (evidenceId: string, phrase: string) =>
 	request(`/api/v1/evidence/${enc(evidenceId)}/locate`, z.unknown(), {
 		method: "POST",
 		body: { phrase },
+	});
+
+// ---- Screen recordings (keyframes sampled in the browser) ----
+/** Each recording of a bug report with its frames, analysis, and located regions. */
+export const getBugReportRecordings = async (bugReportId: string) =>
+	(
+		await request(
+			`/api/v1/bug-reports/${enc(bugReportId)}/recordings`,
+			RecordingsResponseSchema,
+		)
+	).recordings;
+/** Queues another analysis of the frames that arrived; the answer is a job, not a result. */
+export const requestRecordingRetry = (
+	bugReportId: string,
+	recordingId: string,
+) =>
+	request(`/api/v1/bug-reports/${enc(bugReportId)}/recordings`, z.unknown(), {
+		method: "POST",
+		body: { recording_id: recordingId },
 	});
 
 // ---- Capabilities ----

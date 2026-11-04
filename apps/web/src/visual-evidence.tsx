@@ -108,15 +108,16 @@ export function ScreenshotField({
 
 /**
  * Uploads a screenshot to a bug report (`POST /api/v1/bug-reports/{id}/evidence`) and returns the new
- * evidence ID.
+ * evidence ID. `extraMeta` adds fields to the upload's `meta` part, such as the recording a keyframe came from.
  */
 export async function uploadScreenshot(
 	bugReportId: string,
 	file: File,
+	extraMeta: Record<string, unknown> = {},
 ): Promise<string> {
 	const form = new FormData();
 	form.set("file", file);
-	form.set("meta", JSON.stringify({ kind: "screenshot" }));
+	form.set("meta", JSON.stringify({ ...extraMeta, kind: "screenshot" }));
 	let response: Response;
 	try {
 		response = await fetch(
@@ -157,7 +158,7 @@ export async function uploadScreenshot(
 
 // ---- What a screenshot shows ----------------------------------------------------------------------
 
-function Panel({
+export function Panel({
 	tone,
 	title,
 	caption,
@@ -180,7 +181,7 @@ function Panel({
 	);
 }
 
-const subheading = "font-medium text-ink-2 text-xs";
+export const subheading = "font-medium text-ink-2 text-xs";
 
 function Located({ text, location }: { text: string; location: string }) {
 	return (

@@ -1,0 +1,252 @@
+[
+  {
+    "id": "01",
+    "file": "01-system-context",
+    "title": "System context",
+    "description": "Users, the Tracera server and the outside systems it depends on: models, Google, Supabase, npm, Docker and git.",
+    "caption": "Three kinds of user reach one Tracera server through the web app, the Chrome extension or an MCP server. The server talks to a model provider, Google, Supabase Auth, the npm registry, Docker and the user's own git remote; Vercel and Render host the demo.",
+    "group": "Overview",
+    "drawio": "src/01-system-context.drawio",
+    "png": "png/01-system-context.png"
+  },
+  {
+    "id": "02",
+    "file": "02-containers",
+    "title": "Containers: what runs and what stores state",
+    "description": "The API process, the worker process, PostgreSQL and the data directory, and who calls whom.",
+    "caption": "The API and the worker are two processes of apps/server that meet only in PostgreSQL (rows and the pg-boss queue) and the data directory. Only the worker calls a model provider and Docker; the API reports sandbox state from worker heartbeats.",
+    "group": "Overview",
+    "drawio": "src/02-containers.drawio",
+    "png": "png/02-containers.png"
+  },
+  {
+    "id": "03",
+    "file": "03-monorepo-layout",
+    "title": "Monorepo layout and module boundaries",
+    "description": "npm workspaces: three clients, one server, one shared schema package, and the import rules between them.",
+    "caption": "The repository is one TypeScript monorepo: three clients, one server and a shared package of Zod schemas. Inside the server, inference/ and sandbox/ import no HTTP, database or domain code, and only the worker process builds a model provider and a Docker executor.",
+    "group": "Overview",
+    "drawio": "src/03-monorepo-layout.drawio",
+    "png": "png/03-monorepo-layout.png"
+  },
+  {
+    "id": "04",
+    "file": "04-bug-to-fix-workflow",
+    "title": "From bug report to reviewed fix",
+    "description": "The nine steps a bug goes through, from the report to an authorized change in the user's repository.",
+    "caption": "A report becomes evidence, then cited hypotheses, a patch, a sandboxed verification and a human review. Approval records a decision only; applying, committing and pushing are separate actions an owner authorizes one at a time.",
+    "group": "Investigation",
+    "drawio": "src/04-bug-to-fix-workflow.drawio",
+    "png": "png/04-bug-to-fix-workflow.png"
+  },
+  {
+    "id": "05",
+    "file": "05-pipeline-state-machine",
+    "title": "Investigation stages and status machine",
+    "description": "The ten pipeline stages with their timeouts and failure rules, and the legal investigation statuses.",
+    "caption": "Stages run in a fixed order with a few jumps to write_report; collect_context, generate_hypotheses, rank_hypotheses and write_report are fatal when they fail. The status machine allows only the drawn transitions.",
+    "group": "Investigation",
+    "drawio": "src/05-pipeline-state-machine.drawio",
+    "png": "png/05-pipeline-state-machine.png"
+  },
+  {
+    "id": "06",
+    "file": "06-evidence-honesty-model",
+    "title": "Evidence and honesty model",
+    "description": "The four kinds of claim Tracera separates, who sets each label, and the provenance stored with every model result.",
+    "caption": "Visible, inferred, confirmed by repository inspection and verified by execution are kept apart in storage and in the UI. Models propose; code sets hypothesis states and verification outcomes, and every model result carries provenance including [live] or [mock].",
+    "group": "Investigation",
+    "drawio": "src/06-evidence-honesty-model.drawio",
+    "png": "png/06-evidence-honesty-model.png"
+  },
+  {
+    "id": "07",
+    "file": "07-verification-rules",
+    "title": "Verification outcome rules",
+    "description": "The decision table that turns recorded check results into one verification outcome, and the wording each outcome gets.",
+    "caption": "Six rules are evaluated in order over the recorded checks. Only a passed reproduction with every check passed yields verified; a passing test suite alone yields partially_verified at best, and a missing sandbox yields blocked.",
+    "group": "Investigation",
+    "drawio": "src/07-verification-rules.drawio",
+    "png": "png/07-verification-rules.png"
+  },
+  {
+    "id": "08",
+    "file": "08-screenshot-understanding",
+    "title": "Screenshot understanding",
+    "description": "Upload, check, queue, vision read, derived evidence, and the optional segmentation overlay.",
+    "caption": "An uploaded screenshot is verified by its bytes, stored by hash and queued for a vision read in the same transaction. The reading keeps visible, inferred and missing information in separate fields with provenance; a segmentation model can mark where a named element sits, as a display aid only.",
+    "group": "Evidence input",
+    "drawio": "src/08-screenshot-understanding.drawio",
+    "png": "png/08-screenshot-understanding.png"
+  },
+  {
+    "id": "09",
+    "file": "09-recording-analysis",
+    "title": "Screen recording analysis",
+    "description": "Browser keyframes, per-frame vision reads, the text-only recording analysis and segmentation on a few frames.",
+    "caption": "A recording is sampled into at most twelve keyframes in the browser and uploaded as tagged screenshots. The worker reads each frame, analyzes the readings with their timestamps in a text-only task, and optionally locates the failing element in up to six frames. Frame readings are reported or inferred evidence, never observed.",
+    "group": "Evidence input",
+    "drawio": "src/09-recording-analysis.drawio",
+    "png": "png/09-recording-analysis.png"
+  },
+  {
+    "id": "10",
+    "file": "10-inference-gateway",
+    "title": "Inference gateway and model routing",
+    "description": "The eight steps of a gateway call, the task registry, the three provider adapters and the model_executions record.",
+    "caption": "Each task in the registry has a prompt version, a strict output schema and a reasoning effort. The gateway redacts, budgets, retries and validates, repairs invalid JSON once, and records exactly one model_executions row per run, whether it succeeded or not.",
+    "group": "Inference",
+    "drawio": "src/10-inference-gateway.drawio",
+    "png": "png/10-inference-gateway.png"
+  },
+  {
+    "id": "11",
+    "file": "11-repository-intelligence",
+    "title": "Repository intelligence: the versioned code graph",
+    "description": "Registering a repository, indexing a commit into a graph snapshot, the graph vocabulary, the queries and who uses them.",
+    "caption": "An owner registers a local repository; an index job clones a hardened mirror, parses JavaScript, TypeScript and SQL without running anything, and links nodes and edges with explicit certainty and coverage. Queries, questions, investigations and patch impact all read the same snapshot.",
+    "group": "Repository",
+    "drawio": "src/11-repository-intelligence.drawio",
+    "png": "png/11-repository-intelligence.png"
+  },
+  {
+    "id": "12",
+    "file": "12-patch-impact",
+    "title": "Patch impact analysis",
+    "description": "Inputs, the six analysis steps, the result and the severity and confidence rules.",
+    "caption": "Given two revisions or a pasted diff, the analysis maps changed lines to symbols, follows graph edges outward and links tests. Every finding carries its chain of edges; severity and confidence are kept apart, and a missing test link is reported as none_identified, never as untested.",
+    "group": "Repository",
+    "drawio": "src/12-patch-impact.drawio",
+    "png": "png/12-patch-impact.png"
+  },
+  {
+    "id": "13",
+    "file": "13-docker-sandbox",
+    "title": "Docker sandbox architecture",
+    "description": "Container flags and limits, dependency preparation behind the egress proxy, the browser runner, cleanup and the no-fallback rule.",
+    "caption": "Test runs, dependency installs and browser reproductions each get hardened disposable containers: no network (or only the registry through a proxy), read-only root, dropped capabilities, resource limits and deadlines. Without Docker the stages are recorded as blocked; nothing falls back to the host.",
+    "group": "Sandbox",
+    "drawio": "src/13-docker-sandbox.drawio",
+    "png": "png/13-docker-sandbox.png"
+  },
+  {
+    "id": "14",
+    "file": "14-runtime-demo",
+    "title": "Runtime demo: shop-ui before and after the patch",
+    "description": "The Lumen Goods demo from fixture to review page: browser run before the patch, the fix, the same run after, and the outcome.",
+    "caption": "A model plans browser steps, code validates them, and a fixed runner drives the app in the sandbox before and after the patch. Both runs leave a screenshot, the app start-up record and each step in words, shown beside the diff. The verification outcome is still derived by rules, and the hosted demo records these runs as blocked.",
+    "group": "Sandbox",
+    "drawio": "src/14-runtime-demo.drawio",
+    "png": "png/14-runtime-demo.png"
+  },
+  {
+    "id": "15",
+    "file": "15-authorized-actions",
+    "title": "Authorized actions on an approved patch",
+    "description": "Approval versus the three explicit actions, the checks before each, and what each one does in git.",
+    "caption": "A person approves in a session; later an owner session can request apply, commit and push one at a time. Each request must echo the verification outcome it saw, acknowledges risks unless verified, runs git with hooks off and without force, and writes an audit event.",
+    "group": "Actions and access",
+    "drawio": "src/15-authorized-actions.drawio",
+    "png": "png/15-authorized-actions.png"
+  },
+  {
+    "id": "16",
+    "file": "16-auth-authorization",
+    "title": "Authentication and authorization",
+    "description": "Password sessions, Google sign-in and personal access tokens, then CSRF, route guards, workspace scoping, rate limits and audit.",
+    "caption": "A request arrives with a session cookie or a bearer token. The API authenticates it, applies the CSRF rule to cookie sessions, checks the route guard (scope, session or owner), scopes every query to the caller's workspace, rate-limits and audits. Tokens can never approve patches or run git actions.",
+    "group": "Actions and access",
+    "drawio": "src/16-auth-authorization.drawio",
+    "png": "png/16-auth-authorization.png"
+  },
+  {
+    "id": "17",
+    "file": "17-google-sign-in",
+    "title": "Google sign-in through Supabase Auth",
+    "description": "Implicit grant through a Supabase Auth project, server-side token verification, user linking and the cookie session.",
+    "caption": "The browser signs in at Supabase, which returns an access token in the URL fragment. The web app sends only that token to the API; the API asks Supabase for the user, accepts only a Google identity with an email Google verified, finds or creates a member (never an owner), starts a Tracera session and ends the Supabase one.",
+    "group": "Actions and access",
+    "drawio": "src/17-google-sign-in.drawio",
+    "png": "png/17-google-sign-in.png"
+  },
+  {
+    "id": "18",
+    "file": "18-google-meet",
+    "title": "Google Meet ingestion",
+    "description": "OAuth with PKCE and sealed tokens, transcript import, model extraction with verbatim quote checks, human confirmation and the investigation it starts.",
+    "caption": "A signed-in person connects Google with state and PKCE and the read-only Meet scope; tokens are sealed on the server. An imported or uploaded transcript becomes numbered segments; one model call proposes candidates, code rejects any whose quotes are not verbatim in the cited segments, and a person confirms each before a bug report and investigation are created.",
+    "group": "Integrations",
+    "drawio": "src/18-google-meet.drawio",
+    "png": "png/18-google-meet.png"
+  },
+  {
+    "id": "19",
+    "file": "19-chrome-extension",
+    "title": "Chrome extension: capture and upload",
+    "description": "Consent and token, click-to-capture, redaction in the pixels, the two uploads and the vision read.",
+    "caption": "The extension asks for consent and a personal access token once, captures only on a click, lets the user black out regions in the image itself, shows exactly what will leave the browser, then creates a bug report and uploads the screenshot, which queues a vision read. It can only talk to the API origin it was built for.",
+    "group": "Integrations",
+    "drawio": "src/19-chrome-extension.drawio",
+    "png": "png/19-chrome-extension.png"
+  },
+  {
+    "id": "20",
+    "file": "20-mcp-server",
+    "title": "MCP server",
+    "description": "The stdio transport, the 14 tools and the REST calls behind them, the token guards and what MCP can never do.",
+    "caption": "A coding agent starts the MCP server over stdio with an API URL and a personal access token. Eleven of its 14 tools are read-only; three create a question, a bug report or an investigation. The API rate-limits and audits every call and never lets an MCP token approve, apply, commit or push.",
+    "group": "Integrations",
+    "drawio": "src/20-mcp-server.drawio",
+    "png": "png/20-mcp-server.png"
+  },
+  {
+    "id": "21",
+    "file": "21-database-overview",
+    "title": "Database overview",
+    "description": "The main tables grouped by area, how they reference each other, and the Data API lockdown.",
+    "caption": "About 35 tables in six areas plus the pgboss schema. Investigations hang off bug reports and repositories; patches, verification runs and authorized actions chain from hypotheses and patches. audit_events is append-only, and the Data API roles have no privileges on any table.",
+    "group": "Platform",
+    "drawio": "src/21-database-overview.drawio",
+    "png": "png/21-database-overview.png"
+  },
+  {
+    "id": "22",
+    "file": "22-queue-worker",
+    "title": "Job queue and worker",
+    "description": "Queues and their expiries, the stage runner, heartbeats, the recovery sweep and cancellation.",
+    "caption": "The API enqueues jobs inside the transaction that writes their rows; the worker consumes one job at a time per queue. A stage commits its outcome and the next job together, a heartbeat reports sandbox state every 15 s, and a sweep every 60 s recovers stalled steps and reaps stale containers.",
+    "group": "Platform",
+    "drawio": "src/22-queue-worker.drawio",
+    "png": "png/22-queue-worker.png"
+  },
+  {
+    "id": "23",
+    "file": "23-deployment",
+    "title": "Deployment: hosted demo and local app",
+    "description": "Vercel, Render and Render Postgres on free plans versus npm run local with Docker and a local Postgres.",
+    "caption": "Hosted: Vercel serves the static web app and proxies /api to one Render service that runs the API and the worker, with Render Postgres on free plans. Local: npm run setup then npm run local start the API, worker and web app on one machine with Postgres and Docker beside them.",
+    "group": "Platform",
+    "drawio": "src/23-deployment.drawio",
+    "png": "png/23-deployment.png"
+  },
+  {
+    "id": "24",
+    "file": "24-hosted-local-capability-map",
+    "title": "Hosted versus local: what works where",
+    "description": "Which capabilities are available, need configuration or are unavailable in the hosted demo and in the local app.",
+    "caption": "The hosted demo has no Docker sandbox and no access to a user's working tree, so it cannot reproduce, verify, apply, commit or push; patch download works. Screenshots and recordings need only the model provider, so they work in both environments.",
+    "group": "Platform",
+    "drawio": "src/24-hosted-local-capability-map.drawio",
+    "png": "png/24-hosted-local-capability-map.png"
+  },
+  {
+    "id": "25",
+    "file": "25-security-controls",
+    "title": "Security controls and trust boundaries",
+    "description": "The untrusted inputs, the six control families and the extra guarantees around the database and evaluation.",
+    "caption": "Repository files, logs, transcripts, images and model output are treated as data, validated at each boundary and redacted before models see them. Models never act; repository code runs only in the sandbox; every query is workspace-scoped; and changes to a user's repository need separate explicit authorizations.",
+    "group": "Platform",
+    "drawio": "src/25-security-controls.drawio",
+    "png": "png/25-security-controls.png"
+  }
+]

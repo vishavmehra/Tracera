@@ -121,6 +121,7 @@ export const ROUTE_RULES: RouteRule[] = [
 		"POST /api/v1/bug-reports",
 		"POST /api/v1/bug-reports/:id/evidence",
 		"POST /api/v1/evidence/:id/observations",
+		"POST /api/v1/bug-reports/:id/recordings",
 	),
 	...rules(
 		"reports:read",
@@ -134,6 +135,7 @@ export const ROUTE_RULES: RouteRule[] = [
 		"GET /api/v1/evidence/:id/content",
 		"GET /api/v1/evidence/:id/observations",
 		"GET /api/v1/evidence/:id/locations",
+		"GET /api/v1/bug-reports/:id/recordings",
 	),
 ];
 

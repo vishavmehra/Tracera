@@ -127,6 +127,7 @@ import {
 	suiteCheck,
 } from "./verification.ts";
 import { screenshotEvidenceItems } from "./visual-evidence.ts";
+import { recordingEvidenceItems } from "./visual-recording.ts";
 import {
 	applyEdits,
 	applyStoredDiff,
@@ -1373,10 +1374,15 @@ async function collectContextStage(ctx: StageContext): Promise<StageOutcome> {
 		investigationId: ctx.row.id,
 		signal: ctx.signal,
 	});
-	pack.limitations.push(...visual.limitations);
+	const recordings = await recordingEvidenceItems(ctx, {
+		workspaceId: ctx.row.workspaceId,
+		bugReportId: bug.id,
+	});
+	pack.limitations.push(...visual.limitations, ...recordings.limitations);
 	const items = [
 		...reportEvidenceItems(bug, assetTexts),
 		...visual.items,
+		...recordings.items,
 		...pack.items,
 	];
 	const stored = await storeText(ctx.config, JSON.stringify(pack));

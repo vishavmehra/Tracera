@@ -26,6 +26,7 @@ import {
 import { newId } from "../lib/ids.ts";
 import { audit, WORKER_ACTOR } from "./audit.ts";
 import { screenshotEvidenceForNormalization } from "./visual-evidence.ts";
+import { recordingEvidenceForNormalization } from "./visual-recording.ts";
 
 type BugReportRow = typeof bugReports.$inferSelect;
 const TEXT_KINDS = ["stack_trace", "log_file", "text_note"] as const;
@@ -286,6 +287,10 @@ export async function runNormalization(
 			bugReportId,
 			investigationId: context.investigationId,
 		});
+		const recordings = await recordingEvidenceForNormalization(deps, {
+			workspaceId: row.workspaceId,
+			bugReportId,
+		});
 		const user = buildNormalizationInput(
 			{
 				title: row.title,
@@ -296,8 +301,8 @@ export async function runNormalization(
 				environment: row.environment,
 				affectedUrl: row.affectedUrl,
 			},
-			[...texts, ...screenshots.evidence],
-			screenshots.unread,
+			[...texts, ...screenshots.evidence, ...recordings.evidence],
+			screenshots.unread + recordings.unread,
 		);
 		const result = await gateway.run(normalizeBugReportTask, {
 			user,
