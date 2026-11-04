@@ -22,6 +22,7 @@ import {
 	isSignedOut,
 	signOut,
 } from "./api.ts";
+import { EnvironmentChip } from "./capabilities.tsx";
 import { ExplorePage, NodePage } from "./explore.tsx";
 import { ImpactPage, PatchAnalysisPage } from "./impact.tsx";
 import {
@@ -188,6 +189,7 @@ function Shell({ session }: { session: Session }) {
 			<div className="flex min-w-0 flex-col">
 				<header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-line border-b bg-canvas px-4 sm:px-6 lg:px-8">
 					<Brand className="lg:hidden" />
+					<EnvironmentChip />
 					<SystemStatus />
 					<div className="ml-auto">
 						<AccountMenu

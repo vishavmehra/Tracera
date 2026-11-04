@@ -2,6 +2,7 @@ export * from "./analysis.ts";
 export * from "./auth.ts";
 export * from "./browser-repro.ts";
 export * from "./bug-reports.ts";
+export * from "./capabilities.ts";
 export * from "./common.ts";
 export * from "./dependencies.ts";
 export * from "./evidence.ts";

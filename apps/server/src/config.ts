@@ -52,6 +52,8 @@ const EnvSchema = z
 		TRACERA_PUBLIC_URL: opt(
 			z.url({ protocol: /^https?$/ }).default("http://127.0.0.1:8787"),
 		),
+		/** `hosted` is a shared demo with no sandbox and no user working tree; `local` is the developer's machine. */
+		TRACERA_ENVIRONMENT: opt(z.enum(["hosted", "local"]).default("local")),
 		DATABASE_URL: opt(z.url({ protocol: /^postgres(ql)?$/ })),
 		TRACERA_AUTO_MIGRATE: bool(false),
 		TRACERA_DATA_DIR: opt(z.string().optional()),
@@ -196,6 +198,8 @@ export type InferenceProviderKind = "mock" | "openai_compatible" | "meta";
 
 export type Config = {
 	env: "development" | "test" | "production";
+	/** Where this server runs; hosted refuses the actions that need a user's working tree. */
+	environment: "hosted" | "local";
 	logLevel: string;
 	api: {
 		host: string;
@@ -268,6 +272,7 @@ export function loadConfig(
 		(provider === "meta" ? "muse-spark-1.3" : "mock-reasoner");
 	return {
 		env: e.NODE_ENV,
+		environment: e.TRACERA_ENVIRONMENT,
 		logLevel: e.LOG_LEVEL,
 		api: {
 			host: e.TRACERA_API_HOST,
@@ -349,6 +354,7 @@ export function loadConfig(
 export function describeConfig(config: Config) {
 	return {
 		env: config.env,
+		environment: config.environment,
 		api: `${config.api.host}:${config.api.port}`,
 		database: new URL(config.databaseUrl).host,
 		dataDir: config.dataDir,

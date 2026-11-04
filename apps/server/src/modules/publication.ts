@@ -29,6 +29,7 @@ import { newId } from "../lib/ids.ts";
 import { redactSecrets } from "../lib/redact.ts";
 import { audit } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
+import { HOSTED_ACTIONS } from "./capabilities.ts";
 import { idempotent } from "./idempotency.ts";
 
 // Applying, committing, and pushing an approved patch. Each is a separate action the signed-in owner
@@ -407,6 +408,16 @@ export async function requestAction(
 	meta: { requestId: string; idempotencyKey: string | undefined },
 ): Promise<{ action: AuthorizedAction; replayed: boolean }> {
 	const actionId = newId("act");
+	// A hosted server has no working tree to change. The patch is looked up first, so another
+	// workspace's patch is still a 404; then the request is refused and nothing is recorded or run.
+	if (deps.config.environment === "hosted") {
+		await loadSubject(deps.db, ctx.workspaceId, patchId);
+		throw new AppError(
+			409,
+			"unavailable_in_hosted_environment",
+			HOSTED_ACTIONS,
+		);
+	}
 	const loaded: { subject?: Subject; previous?: Committed | null } = {};
 	const started = await idempotent<Started>(
 		deps,

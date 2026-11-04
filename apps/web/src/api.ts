@@ -2,6 +2,7 @@ import {
 	type ActionRequest,
 	type ApprovalRequest,
 	type AskQuestionRequest,
+	CapabilitiesResponseSchema,
 	type ChangeImpactRequest,
 	type ConfirmMeetingCandidateRequest,
 	ConfirmMeetingCandidateResponseSchema,
@@ -543,3 +544,8 @@ export const requestEvidenceLocation = (evidenceId: string, phrase: string) =>
 		method: "POST",
 		body: { phrase },
 	});
+
+// ---- Capabilities ----
+/** What this server can do: its environment, its inference mode, and the status of each capability. */
+export const getCapabilities = () =>
+	request("/api/v1/capabilities", CapabilitiesResponseSchema);

@@ -46,6 +46,10 @@ services:
       # is reported as blocked.
       - key: TRACERA_SANDBOX_MODE
         value: disabled
+      # A shared demo: no sandbox and no user working tree, so applying, committing, and pushing a
+      # patch are refused and the web app says what it can and cannot do.
+      - key: TRACERA_ENVIRONMENT
+        value: hosted
       - key: TRACERA_LLM_DAILY_BUDGET_USD
         value: "5"
       # Requests arrive through the web deployment's proxy and Render's; without this every login

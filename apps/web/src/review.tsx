@@ -10,6 +10,7 @@ import {
 	getReport,
 	getVerification,
 } from "./api.ts";
+import { PublicationGate, VerificationNotice } from "./capabilities.tsx";
 import { StoredImpact } from "./impact.tsx";
 import {
 	bugReportQuery,
@@ -17,7 +18,6 @@ import {
 	useInvestigation,
 	withCode,
 } from "./investigations.tsx";
-import { PublicationPanel } from "./publication.tsx";
 import { RuntimeEvidence } from "./runtime-evidence.tsx";
 import {
 	type Check,
@@ -801,6 +801,7 @@ export function PatchReviewPage() {
 
 							<div className="min-w-0 lg:border-line lg:border-l lg:pl-8 lg:[&>section:first-child]:mt-0">
 								<Section title="Verification" id="verification-heading">
+									<VerificationNotice patch={data} />
 									<VerificationPanel patch={data} />
 								</Section>
 
@@ -836,7 +837,7 @@ export function PatchReviewPage() {
 									</QueryView>
 								</Section>
 
-								<PublicationPanel patch={data} />
+								<PublicationGate patch={data} />
 							</div>
 						</div>
 					</>

@@ -24,6 +24,7 @@ import {
 	listReproductions,
 	retryInvestigation,
 } from "./api.ts";
+import { ReproductionNotice } from "./capabilities.tsx";
 import { POLL_MS } from "./hooks.ts";
 import type { Findings, Investigation } from "./schemas.ts";
 import {
@@ -1252,6 +1253,7 @@ function Reproduction({ investigation }: { investigation: Investigation }) {
 	const baseline = investigation.baseline_reproduction;
 	return (
 		<div className="space-y-5 text-sm">
+			<ReproductionNotice baseline={baseline} />
 			<p className="flex flex-wrap items-center gap-x-3 gap-y-1">
 				<span className="text-ink-3">Baseline</span>
 				{baseline ? (

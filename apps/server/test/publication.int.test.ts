@@ -1011,3 +1011,102 @@ describe("downloading the approved patch", () => {
 		expect(response.body).toBe(s.diff);
 	});
 });
+
+describe("on a hosted server", () => {
+	let hosted: TestContext;
+	// Sessions live in the database, so the owner's cookie works against a second server on the same
+	// database; it shares the data and repository folders so the only difference is the environment.
+	beforeAll(async () => {
+		hosted = await createTestContext({
+			TRACERA_ENVIRONMENT: "hosted",
+			TRACERA_DATA_DIR: ctx.config.dataDir,
+			TRACERA_REPO_ROOTS: ctx.repoRoot,
+		});
+	});
+	afterAll(async () => hosted.close());
+	const onHosted = (credentials = cookie) => asSession(hosted, credentials);
+	const branches = (s: Scenario) => git(s.repoDir, "branch", "--list");
+
+	it("refuses apply, commit, and push with a stable code, and changes nothing", async () => {
+		const s = await seedScenario();
+		for (const body of [{ kind: "apply" }, { kind: "commit" }, pushBody()]) {
+			const response = await onHosted()("POST", actionsUrl(s), {
+				...authorize(s),
+				...body,
+			});
+			expect(response.statusCode, body.kind).toBe(409);
+			expect(response.json()).toMatchObject({
+				code: "unavailable_in_hosted_environment",
+				detail: expect.stringContaining("run in the local app"),
+			});
+		}
+		expect(await rows(s)).toEqual([]);
+		for (const kind of ["apply", "commit", "push"])
+			expect(await audits(`publication.${kind}`)).toEqual([]);
+		expect(status(s.repoDir)).toBe("");
+		expect(branches(s)).toBe("* main");
+		expect(existsSync(path.join(s.repoDir, "src/format.js"))).toBe(false);
+	});
+
+	it("keeps the session, owner, and request rules ahead of the refusal", async () => {
+		const s = await seedScenario();
+		const body = { kind: "apply", ...authorize(s) };
+		for (const client of ["script", "mcp"] as const) {
+			const token = await createToken(hosted, cookie, {
+				name: client,
+				client_kind: client,
+				...(client === "script" ? { scopes: ["investigations:read"] } : {}),
+			});
+			const response = await asToken(hosted, token)(
+				"POST",
+				actionsUrl(s),
+				body,
+			);
+			expect(response.statusCode, client).toBe(403);
+			expect(response.json().code).toBe("session_required");
+		}
+		await addMember(ctx.db, owner.workspaceId);
+		const member = await onHosted(await login(ctx, "member@example.com"))(
+			"POST",
+			actionsUrl(s),
+			body,
+		);
+		expect(member.statusCode).toBe(403);
+		expect(member.json().code).toBe("owner_required");
+		const malformed = await onHosted()("POST", actionsUrl(s), {
+			kind: "force_push",
+		});
+		expect(malformed.statusCode).toBe(400);
+		expect(malformed.json().code).toBe("validation_failed");
+		const bare = await hosted.app.inject({
+			method: "POST",
+			url: actionsUrl(s),
+			headers: { cookie },
+			payload: body,
+		});
+		expect(bare.json().code).toBe("csrf_failed");
+		expect(await rows(s)).toEqual([]);
+	});
+
+	it("still answers 404 for another workspace's patch", async () => {
+		const s = await seedScenario();
+		await createOwner(ctx.db, "other@example.com");
+		const response = await onHosted(await login(ctx, "other@example.com"))(
+			"POST",
+			actionsUrl(s),
+			{ kind: "apply", ...authorize(s) },
+		);
+		expect(response.statusCode).toBe(404);
+		expect(response.json().code).toBe("not_found");
+	});
+
+	it("still serves the approved patch for download", async () => {
+		const s = await seedScenario();
+		const response = await onHosted()(
+			"GET",
+			`/api/v1/patches/${s.patchId}/download`,
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.body).toBe(s.diff);
+	});
+});

@@ -416,8 +416,13 @@ describe("repository page", () => {
 		expect(
 			await screen.findByRole("heading", { name: "Repository not found" }),
 		).toBeTruthy();
+		// The shell's own status requests are not the page's.
 		expect(
-			calls.map((call) => call.path).filter((path) => path !== "/readyz"),
+			calls
+				.map((call) => call.path)
+				.filter(
+					(path) => path !== "/readyz" && path !== "/api/v1/capabilities",
+				),
 		).toEqual(["/api/v1/auth/me"]);
 	});
 
