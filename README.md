@@ -16,7 +16,7 @@ The judging account is a shared email-and-password account with the workspace **
 
 ## Walkthrough video
 
-**The narrated walkthrough lives in `diagrams/walkthrough/` as `tracera-walkthrough.mp4`.** It shows both ways to run Tracera: the hosted website, and a local install on a laptop with its own database and Docker sandbox. On the laptop it follows a real Google Meet call from transcript import to a verified, applied patch, then analyses a screen recording and drives Tracera from a coding agent through MCP. The voiceover is synthetic and every scene has captions (`.srt` files sit next to the video). Long waits are sped up and labelled.
+**[Watch the narrated walkthrough: diagrams/walkthrough/tracera-walkthrough.mp4](diagrams/walkthrough/tracera-walkthrough.mp4)** (29 min 26 s, 60 MB; captions also in [`tracera-walkthrough.srt`](diagrams/walkthrough/tracera-walkthrough.srt)). It explains each part of Tracera and narrates the 25 architecture diagrams next to the features they describe. It shows both ways to run it: the hosted website, and a local install on a laptop with its own database and Docker sandbox. On the laptop it follows a real Google Meet call from transcript import to a verified, applied patch, shows how the sandbox isolates repository code, analyses a screen recording, and drives Tracera from a coding agent through MCP. The voiceover is synthetic and the captions are burned in. Where a long wait is skipped, the narration says so.
 
 **Architecture and workflow diagrams:** all 25 are in [`diagrams/`](diagrams/), as editable draw.io sources (`diagrams/src/`) and PNG (`diagrams/png/`), indexed with titles and captions in [`diagrams/index.json`](diagrams/index.json). Each is embedded below in the section it explains.
 

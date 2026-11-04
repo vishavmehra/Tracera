@@ -1,0 +1,1768 @@
+1
+00:00:00,350 --> 00:00:01,163
+Tracera.
+
+2
+00:00:01,163 --> 00:00:02,938
+From symptom to certainty.
+
+3
+00:00:02,938 --> 00:00:10,763
+Show it a bug, and it investigates the code,
+proposes a fix, verifies that fix in a
+sandbox, and shows you what changed.
+
+4
+00:00:11,212 --> 00:00:13,562
+A bug report is only a symptom.
+
+5
+00:00:13,562 --> 00:00:19,174
+Getting to a fix you can trust means reading
+code, reproducing the failure, and checking
+the patch.
+
+6
+00:00:19,174 --> 00:00:24,949
+Tracera does that legwork, and it keeps one
+rule: it never claims more than it observed.
+
+7
+00:00:24,949 --> 00:00:33,762
+Nothing is called verified, fixed, or
+confirmed unless the stored record says so,
+and every model result is labelled live or
+mock.
+
+8
+00:00:34,218 --> 00:00:36,830
+You will see Tracera in two environments.
+
+9
+00:00:36,831 --> 00:00:41,968
+A hosted website, where you can look around,
+ask questions, and run analysis.
+
+10
+00:00:41,968 --> 00:00:53,656
+And your own laptop, where your code, your
+database, and the Docker sandbox stay on
+your machine, and where the full workflow
+runs: sandboxed reproduction, verification,
+and applying a patch.
+
+11
+00:00:53,656 --> 00:00:58,893
+The laptop needs the internet only for model
+calls and the optional Google Meet import.
+
+
+12
+00:00:59,833 --> 00:01:04,273
+This table shows what works in the hosted
+demo, and what works in the local app.
+
+13
+00:01:04,573 --> 00:01:11,557
+Bug analysis, screenshot understanding and
+recording analysis work in both, because
+none of them needs Docker.
+
+14
+00:01:11,857 --> 00:01:18,769
+The hosted demo has no Docker, so sandbox
+verification, apply, commit and push are
+unavailable there.
+
+15
+00:01:19,069 --> 00:01:23,485
+Locally they work, once Docker is configured
+and an owner is signed in.
+
+16
+00:01:23,785 --> 00:01:27,625
+Google Meet import needs configuration in
+both places.
+
+
+17
+00:01:28,525 --> 00:01:33,565
+System context: who uses Tracera, and which
+outside systems it depends on.
+
+18
+00:01:33,865 --> 00:01:41,257
+A reviewer uses the web app, a bug reporter
+uses the Chrome extension, and a coding
+agent uses the MCP server.
+
+19
+00:01:41,557 --> 00:01:47,797
+All three call one Tracera server over
+HTTPS, and its state lives in PostgreSQL.
+
+20
+00:01:48,097 --> 00:01:57,337
+Dashed boxes are outside systems: the model
+API, Google, Supabase Auth, the npm
+registry, Docker and your own git remote.
+
+21
+00:01:57,637 --> 00:02:00,853
+Docker, installs and git push are local
+only.
+
+
+22
+00:02:01,753 --> 00:02:05,041
+Containers: what runs, and what stores
+state.
+
+23
+00:02:05,341 --> 00:02:14,293
+The API process serves the web app, the
+extension and the MCP server, and enqueues
+jobs. It never calls Docker or a model.
+
+24
+00:02:14,593 --> 00:02:22,273
+The worker process runs every model call,
+through the inference gateway, and every
+sandbox run, through the Docker executor.
+
+25
+00:02:22,573 --> 00:02:30,805
+The two processes never call each other.
+They share PostgreSQL, for rows and the job
+queue, and a data directory for files.
+
+
+26
+00:02:31,705 --> 00:02:37,009
+One TypeScript monorepo holds three clients,
+one server and shared schemas.
+
+27
+00:02:37,309 --> 00:02:45,229
+The web app, the extension and the MCP
+server import only the contracts package,
+and call the server over HTTP.
+
+28
+00:02:45,529 --> 00:02:51,697
+In the server, the API and the worker call
+the modules, which are flat files grouped by
+area.
+
+29
+00:02:51,997 --> 00:02:54,853
+Every model call goes through the inference
+folder.
+
+30
+00:02:55,153 --> 00:03:01,153
+Repository code runs only through the
+sandbox folder, which only the worker
+process reaches.
+
+31
+00:03:01,453 --> 00:03:06,109
+Neither folder imports HTTP, database or
+module code.
+
+
+32
+00:03:07,059 --> 00:03:10,884
+This is the hosted website, running on
+free-plan services.
+
+33
+00:03:10,884 --> 00:03:15,484
+It may be asleep when you arrive, and the
+first request can take up to a minute.
+
+34
+00:03:15,484 --> 00:03:19,821
+The sign-in page offers Continue with
+Google, which I am not using here.
+
+35
+00:03:19,821 --> 00:03:22,834
+I sign in as the public judge account from
+the README.
+
+36
+00:03:23,297 --> 00:03:26,822
+The header says Hosted demo, with live Meta
+inference.
+
+37
+00:03:26,822 --> 00:03:33,797
+Two repositories are registered and indexed:
+shop-ui, and bench-shop, a synthetic
+benchmark fixture.
+
+38
+00:03:33,797 --> 00:03:37,672
+Coverage and freshness are reported the way
+the API sees them.
+
+39
+00:03:38,143 --> 00:03:40,868
+The code graph works here as it does on a
+laptop.
+
+40
+00:03:40,868 --> 00:03:44,880
+I search for a symbol, open it, and trace
+its callers upstream.
+
+41
+00:03:45,333 --> 00:03:51,845
+Questions are answered by a live model over
+excerpts from that graph, and each claim
+cites the code it relies on.
+
+42
+00:03:51,845 --> 00:03:53,221
+The label says live.
+
+43
+00:03:53,675 --> 00:03:59,388
+Change impact lists what a change to a
+symbol can reach: code, tests, and files.
+
+44
+00:03:59,857 --> 00:04:02,894
+On the Meetings page I upload a short
+transcript.
+
+45
+00:04:02,894 --> 00:04:11,032
+A live model proposes bug candidates, each
+with quotes from the transcript, and nothing
+becomes a bug report until a person confirms
+it.
+
+46
+00:04:11,487 --> 00:04:15,487
+An investigation on the hosted site stops
+before the sandbox.
+
+47
+00:04:15,487 --> 00:04:22,987
+I describe the shipping bug, attach the cart
+screenshot, and choose analysis only,
+because this environment has no Docker.
+
+48
+00:04:23,453 --> 00:04:25,203
+The worker runs the stages.
+
+49
+00:04:25,203 --> 00:04:31,091
+The sandbox stages are recorded as blocked,
+not faked, and the reproduction section says
+so.
+
+50
+00:04:31,555 --> 00:04:39,793
+The patch review page shows the proposed
+one-line diff, and a notice: no sandbox in
+this environment, so the fix was not run
+here.
+
+51
+00:04:39,792 --> 00:04:45,255
+The recorded verification outcome is
+blocked, with the reason analysis only
+requested.
+
+52
+00:04:45,255 --> 00:04:46,830
+Nothing is called verified.
+
+53
+00:04:46,830 --> 00:04:54,367
+Applying, committing, and pushing are
+laptop-only features; on the hosted site an
+approved patch can only be downloaded.
+
+
+54
+00:04:55,325 --> 00:04:58,661
+Three ways in, six checks on every request.
+
+55
+00:04:58,961 --> 00:05:02,081
+A password or Google sign-in creates a
+session.
+
+56
+00:05:02,381 --> 00:05:09,749
+Scripts, the extension and MCP use a
+personal access token; secrets are stored
+only as hashes.
+
+57
+00:05:10,049 --> 00:05:16,505
+A request is authenticated, checked for CSRF
+if it uses a cookie, then passed to a route
+guard.
+
+58
+00:05:16,805 --> 00:05:24,485
+Queries are scoped to the caller's
+workspace, so another workspace's ID answers
+not found; limits and audit follow.
+
+59
+00:05:24,785 --> 00:05:29,249
+A token can never approve a patch, apply,
+commit or push.
+
+
+60
+00:05:30,149 --> 00:05:33,437
+The token that returns to the browser is
+never trusted.
+
+61
+00:05:33,737 --> 00:05:39,977
+The sign-in page links to Supabase, which
+sends the browser to Google and back with an
+access token.
+
+62
+00:05:40,277 --> 00:05:43,853
+The callback page sends only that token to
+the API.
+
+63
+00:05:44,153 --> 00:05:52,049
+The API asks Supabase who owns the token,
+and accepts only a Google identity whose
+email Google vouches for.
+
+64
+00:05:52,349 --> 00:05:58,445
+It finds the user by email or creates a new
+member, never an owner, and starts a cookie
+session.
+
+
+65
+00:05:59,345 --> 00:06:05,249
+Only an owner registers a repository, and an
+existing snapshot for a commit is reused.
+
+66
+00:06:05,549 --> 00:06:13,565
+A worker clones a mirror and parses
+JavaScript, TypeScript and SQL as text,
+running nothing from the repository.
+
+67
+00:06:13,865 --> 00:06:19,697
+An edge exists only when its target
+resolves; otherwise it is counted as
+unresolved.
+
+68
+00:06:19,997 --> 00:06:26,525
+The graph has twenty-seven node kinds and
+twenty-two edge kinds, and every edge
+records its certainty.
+
+69
+00:06:26,825 --> 00:06:34,865
+Search, tracing, impact and cited questions
+read one snapshot, for the web app, MCP
+tools and patch impact.
+
+
+70
+00:06:35,815 --> 00:06:38,915
+Back on the laptop stack, with the
+repositories.
+
+71
+00:06:38,915 --> 00:06:42,190
+Registering a repository is an owner-only
+action.
+
+72
+00:06:42,645 --> 00:06:45,682
+I register the Shop UI demo as a local path.
+
+73
+00:06:45,682 --> 00:06:51,757
+The form stores the install and test
+commands for later sandbox runs, and they
+never run on the host.
+
+74
+00:06:51,757 --> 00:06:58,708
+The start command and app port that browser
+runs need are set through the API, because
+the form does not expose them yet.
+
+75
+00:06:59,171 --> 00:07:03,134
+Indexing runs in the background worker, and
+it only parses text.
+
+76
+00:07:03,134 --> 00:07:05,946
+Nothing from the repository is executed.
+
+77
+00:07:05,946 --> 00:07:11,209
+The snapshot reports its own coverage and
+freshness, including what it could not
+resolve.
+
+78
+00:07:11,665 --> 00:07:16,340
+Search finds symbols, files, routes, tables,
+and text.
+
+79
+00:07:16,791 --> 00:07:23,053
+A node shows its source excerpt, marked as
+observed by the parser, and its direct
+relationships.
+
+80
+00:07:23,525 --> 00:07:29,037
+Tracing follows calls upstream or
+downstream, and it lists the gaps it could
+not bridge.
+
+81
+00:07:29,491 --> 00:07:32,953
+History and ownership come from git, not
+from a model.
+
+82
+00:07:33,417 --> 00:07:40,679
+Change impact ranks the code, tests, and
+files that a change here can reach, with the
+chain of edges that connects them.
+
+83
+00:07:41,135 --> 00:07:43,885
+Questions about the codebase get cited
+answers.
+
+84
+00:07:43,885 --> 00:07:47,910
+I ask where the shipping charge is decided,
+and how the cart page shows it.
+
+85
+00:07:47,910 --> 00:07:51,135
+A live model reads excerpts that the graph
+retrieved.
+
+86
+00:07:51,589 --> 00:07:56,564
+Every claim cites an excerpt, and code
+checks each citation against what was sent.
+
+87
+00:07:56,564 --> 00:08:01,627
+A claim whose citation does not hold is
+shown as unsupported instead of being
+hidden.
+
+88
+00:08:01,627 --> 00:08:05,064
+The label says live: this was a real Muse
+Spark call.
+
+89
+00:08:05,523 --> 00:08:08,285
+The Impact tab also analyses a patch.
+
+90
+00:08:08,285 --> 00:08:10,460
+I paste the diff Tracera proposed.
+
+91
+00:08:10,460 --> 00:08:15,836
+It is applied to a Tracera-owned copy of the
+base, and the working tree is never touched.
+
+92
+00:08:16,289 --> 00:08:25,027
+The analysis runs as a job, and reports its
+own status and limits: what the diff
+changes, which tests cover it, and what it
+can reach.
+
+
+93
+00:08:25,965 --> 00:08:30,621
+Patch impact shows what a patch can reach
+from static graphs; nothing is run.
+
+94
+00:08:30,921 --> 00:08:34,185
+The input is two revisions, or a pasted
+diff.
+
+95
+00:08:34,485 --> 00:08:39,933
+It compares the revisions, graphs both
+sides, and maps changed lines to symbols.
+
+96
+00:08:40,233 --> 00:08:47,097
+It follows the graph outward from changed
+symbols and links tests, reporting none
+identified, never untested.
+
+97
+00:08:47,397 --> 00:08:51,837
+Severity and confidence are rated
+separately, by documented rules.
+
+98
+00:08:52,137 --> 00:08:56,361
+The result appears on the Impact page and
+with each proposed patch.
+
+
+99
+00:08:57,261 --> 00:09:03,141
+One bug, end to end. Orange means a person
+decides; grey needs the Docker sandbox.
+
+100
+00:09:03,441 --> 00:09:10,257
+A report arrives, code searches the
+repository, and the sandbox runs a
+reproduction before any patch.
+
+101
+00:09:10,557 --> 00:09:16,413
+Models propose causes and patches, and code
+checks every citation and the patch policy.
+
+102
+00:09:16,713 --> 00:09:22,977
+The sandbox applies the exact diff the
+reviewer sees, and a template writes the
+report from stored data.
+
+103
+00:09:23,277 --> 00:09:30,069
+A person reviews, and approval changes no
+files. Applying, committing and pushing are
+separate requests.
+
+104
+00:09:30,369 --> 00:09:33,657
+Models never act, and nothing runs on the
+host.
+
+
+105
+00:09:34,557 --> 00:09:40,629
+Ten stages run as separate queued jobs, and
+the status changes only along the drawn
+arrows.
+
+106
+00:09:40,929 --> 00:09:44,241
+Each box gives a timeout and whether failure
+is fatal.
+
+107
+00:09:44,541 --> 00:09:49,893
+Dashed arrows allow another patch attempt,
+or a jump to the report when nothing can
+continue.
+
+108
+00:09:50,193 --> 00:09:55,257
+A starting job makes the status running, and
+a proposed patch makes it awaiting approval.
+
+109
+00:09:55,557 --> 00:10:00,573
+Approved or rejected completes it, and
+changes requested send it back to queued.
+
+110
+00:10:00,873 --> 00:10:06,153
+A fatal failure or three failed attempts
+ends as failed, and retry requeues it.
+
+
+111
+00:10:07,053 --> 00:10:10,605
+Four kinds of claim, weakest to strongest
+evidence.
+
+112
+00:10:10,905 --> 00:10:15,705
+Visible is what a model reads from an image;
+inferred is what it guesses.
+
+113
+00:10:16,005 --> 00:10:21,789
+Confirmed by repository inspection is
+static: tools recorded it from code and
+history.
+
+114
+00:10:22,089 --> 00:10:27,681
+Verified by execution means sandbox runs,
+and the stored outcome must say so.
+
+115
+00:10:27,981 --> 00:10:33,861
+Models propose, code sets hypothesis states,
+and the UI labels mock or live.
+
+
+116
+00:10:34,761 --> 00:10:39,105
+Only one function writes the outcome, and
+the first matching rule wins.
+
+117
+00:10:39,405 --> 00:10:43,725
+Its input is one record per check, with a
+kind and a status.
+
+118
+00:10:44,025 --> 00:10:47,889
+No checks gives not attempted, and any
+failed check gives failed.
+
+119
+00:10:48,189 --> 00:10:52,245
+Verified needs a passed reproduction and
+every check passed.
+
+120
+00:10:52,545 --> 00:10:57,057
+Passing checks without a passed reproduction
+give only partially verified.
+
+121
+00:10:57,357 --> 00:11:02,589
+Inconclusive checks give inconclusive, and
+checks that could not run give blocked.
+
+122
+00:11:02,889 --> 00:11:09,273
+A passing test suite alone never gives
+verified, and apply, commit and push must
+echo the outcome.
+
+
+123
+00:11:10,223 --> 00:11:17,361
+This is the laptop environment: Tracera
+running on this machine, with live Meta
+models and the Docker sandbox.
+
+124
+00:11:17,361 --> 00:11:19,948
+I sign in with an email and a password.
+
+125
+00:11:20,413 --> 00:11:27,263
+Two repositories are registered and indexed:
+shop-ui, a small shop with a cart page, and
+bench-shop.
+
+126
+00:11:27,723 --> 00:11:29,161
+Now the Meetings page.
+
+127
+00:11:29,161 --> 00:11:35,223
+Google Meet is connected with read-only
+access, granted earlier through Google's own
+consent screen.
+
+128
+00:11:35,223 --> 00:11:41,473
+Tracera receives the transcript text only:
+no audio, no video, no screen shares.
+
+129
+00:11:41,921 --> 00:11:49,796
+To import, I choose a default repository,
+confirm that I am authorized to share the
+transcript, and ask Google for recent
+meetings.
+
+130
+00:11:50,263 --> 00:11:54,913
+Google lists a real meeting from today, with
+two generated transcripts.
+
+131
+00:11:55,365 --> 00:11:56,865
+I import the longer one.
+
+
+132
+00:11:58,087 --> 00:12:01,375
+A meeting transcript becomes reviewed bug
+reports.
+
+133
+00:12:01,675 --> 00:12:09,043
+A signed-in person connects Google with a
+proof key and a read-only scope; tokens are
+sealed and never leave the server.
+
+134
+00:12:09,343 --> 00:12:12,487
+Importing a transcript needs a consent
+attestation.
+
+135
+00:12:12,787 --> 00:12:19,483
+Numbered segments go to one model call,
+which proposes candidates with quotes from
+the untrusted transcript.
+
+136
+00:12:19,783 --> 00:12:26,647
+Code rejects any candidate whose quote is
+not verbatim in the segments sent. The model
+sets no status.
+
+137
+00:12:26,947 --> 00:12:36,067
+A person edits, dismisses or confirms each
+candidate; confirming creates a bug report
+and, unless declined, an investigation.
+
+
+138
+00:12:37,017 --> 00:12:39,804
+Tracera parses it into numbered segments.
+
+139
+00:12:39,804 --> 00:12:43,867
+This one is forty-eight seconds, and the
+speaker lists four bugs.
+
+140
+00:12:43,867 --> 00:12:47,117
+Speaker names from the source are masked in
+this recording.
+
+141
+00:12:47,567 --> 00:12:53,229
+Now a live model reads the transcript and
+proposes bug candidates, each with quotes.
+
+142
+00:12:53,230 --> 00:12:57,367
+This is a real call to Meta's Muse Spark,
+and the wait is sped up.
+
+143
+00:12:57,367 --> 00:12:58,792
+The model proposes.
+
+144
+00:12:58,792 --> 00:13:04,892
+Code then checks that every quote occurs
+verbatim in the segment it cites, and flags
+likely duplicates.
+
+145
+00:13:05,341 --> 00:13:21,529
+Four candidates: the checkout button does
+not respond, the price does not update when
+the quantity changes, the mobile navigation
+overlaps the content, and the cart banner
+promises free shipping from fifty dollars,
+yet an order of exactly fifty is charged
+four ninety-nine.
+
+146
+00:13:21,529 --> 00:13:25,766
+Each carries the quote that supports it, and
+none of them is a bug report yet.
+
+147
+00:13:26,235 --> 00:13:28,385
+I confirm the free-shipping candidate.
+
+148
+00:13:28,385 --> 00:13:31,635
+Confirming creates a bug report and nothing
+else.
+
+149
+00:13:31,635 --> 00:13:34,923
+A person still decides whether an
+investigation starts.
+
+150
+00:13:35,393 --> 00:13:41,155
+I start one on shop-ui in full mode, which
+means sandboxed reproduction and
+verification.
+
+151
+00:13:41,623 --> 00:13:44,073
+The worker then ran all ten stages.
+
+152
+00:13:44,073 --> 00:13:53,223
+This recording does not show the wait
+itself: from here on, everything on screen
+is stored state, and each stage keeps its
+status and its duration.
+
+153
+00:13:53,685 --> 00:14:03,735
+One hypothesis: an off-by-one in the
+shipping function, which uses a strict
+greater-than, so a subtotal of exactly fifty
+dollars falls through to the paid rate.
+
+154
+00:14:03,735 --> 00:14:11,222
+It cites code excerpts, the commit that
+introduced the change, the baseline
+reproduction, and the bug report as
+submitted.
+
+155
+00:14:11,222 --> 00:14:16,535
+Its state is confirmed by verification, and
+a rule set that state, not the model.
+
+156
+00:14:17,003 --> 00:14:21,490
+The reproduction section records what the
+sandbox observed on the original code.
+
+157
+00:14:21,490 --> 00:14:26,590
+A real browser followed the steps against
+the running app, and the baseline reproduced
+the bug.
+
+158
+00:14:27,049 --> 00:14:30,461
+The proposed patch changes one line in one
+file.
+
+159
+00:14:30,927 --> 00:14:37,464
+The review page shows the exact diff that
+was verified: the strict greater-than
+becomes greater-than-or-equal.
+
+160
+00:14:37,925 --> 00:14:41,850
+Static impact comes from the code graph,
+with its limits stated.
+
+161
+00:14:42,307 --> 00:14:49,932
+The recorded outcome is verified: the
+reproduction check passed on the patched
+code, the unit tests passed, and no check
+failed.
+
+162
+00:14:49,932 --> 00:14:53,132
+Both ran in the Docker sandbox, with no
+network.
+
+163
+00:14:53,132 --> 00:14:55,982
+A rule derived it from what the sandbox
+observed.
+
+164
+00:14:56,433 --> 00:15:00,483
+Runtime evidence shows the same browser
+steps before and after.
+
+165
+00:15:00,483 --> 00:15:07,496
+Before the patch: a subtotal of fifty
+dollars, shipping four ninety-nine, and the
+free-shipping assertion fails.
+
+166
+00:15:07,496 --> 00:15:11,633
+After the patch: shipping reads Free, and
+the assertions pass.
+
+167
+00:15:12,095 --> 00:15:15,582
+A person acknowledges the recorded outcome
+and approves.
+
+168
+00:15:15,583 --> 00:15:17,383
+Approval records a decision.
+
+169
+00:15:17,383 --> 00:15:19,020
+It changes no files.
+
+170
+00:15:19,477 --> 00:15:24,952
+Applying the patch is a separate action,
+with its own authorization and its own
+confirmation.
+
+171
+00:15:24,952 --> 00:15:31,040
+It writes the one-line change into the
+working tree of the registered repository,
+and it stages nothing.
+
+172
+00:15:31,040 --> 00:15:34,127
+No commit and no push were run in this
+recording.
+
+173
+00:15:34,587 --> 00:15:36,912
+I start the app from that patched working
+tree.
+
+174
+00:15:36,912 --> 00:15:41,212
+With one lamp the cart is twenty-five
+dollars, and shipping is charged.
+
+175
+00:15:41,681 --> 00:15:46,856
+With two lamps the subtotal is exactly fifty
+dollars, and shipping now reads Free.
+
+176
+00:15:46,856 --> 00:15:55,868
+That is the whole loop on the laptop: from a
+Google Meet transcript to a reviewed,
+applied change, with every claim tied to a
+stored record.
+
+
+177
+00:15:56,834 --> 00:16:01,922
+Every model call passes through one gateway,
+and nothing else imports a provider.
+
+178
+00:16:02,222 --> 00:16:05,846
+The registry defines each task's prompt and
+schema.
+
+179
+00:16:06,146 --> 00:16:12,122
+The gateway redacts secrets, prepares
+images, hashes the request and checks
+budgets.
+
+180
+00:16:12,422 --> 00:16:16,934
+It then calls the provider, with retries,
+and validates the JSON.
+
+181
+00:16:17,234 --> 00:16:20,498
+Every run records one model executions row.
+
+182
+00:16:20,798 --> 00:16:25,646
+Providers: Meta, an OpenAI-style endpoint,
+or a labelled mock.
+
+
+183
+00:16:26,546 --> 00:16:32,162
+Repository code and model-written tests run
+only in disposable Docker containers.
+
+184
+00:16:32,462 --> 00:16:37,766
+Each run gets no network, a read-only root,
+dropped capabilities and limits.
+
+185
+00:16:38,066 --> 00:16:44,690
+Dependencies install behind a proxy allowing
+only the registry, then are sealed and
+mounted read-only.
+
+186
+00:16:44,990 --> 00:16:49,262
+The browser reaches only the app and aborts
+every other request.
+
+187
+00:16:49,562 --> 00:16:54,290
+Without Docker, stages are recorded as
+blocked; nothing runs on the host.
+
+
+188
+00:16:55,240 --> 00:17:00,340
+Repository code is untrusted, so Tracera
+never runs it on the host.
+
+189
+00:17:00,340 --> 00:17:05,640
+Tests and reproductions run only inside
+Docker, through one sandbox executor.
+
+190
+00:17:05,640 --> 00:17:10,277
+What you see is its real output, captured
+live on this laptop and replayed here.
+
+191
+00:17:10,734 --> 00:17:17,546
+A request carries only data: a command, a
+workspace, an allowlisted environment, and a
+timeout.
+
+192
+00:17:17,546 --> 00:17:19,759
+The executor validates it first.
+
+193
+00:17:19,759 --> 00:17:27,146
+A shell, inline code, a host variable, and a
+workspace outside the root were each refused
+before Docker was called.
+
+194
+00:17:27,596 --> 00:17:33,071
+Inside the container, the process ran as
+user 1000, group 1000.
+
+195
+00:17:33,071 --> 00:17:39,858
+Writes to work, etc, root, and usr local bin
+all failed with a read-only file system
+error.
+
+196
+00:17:39,858 --> 00:17:44,758
+Only tmp accepted a write, and running a
+script from tmp was denied.
+
+197
+00:17:45,226 --> 00:17:47,364
+There is only a loopback interface.
+
+198
+00:17:47,364 --> 00:17:52,176
+A connection to 1.1.1.1 failed as
+unreachable.
+
+199
+00:17:52,176 --> 00:17:54,901
+DNS and fetch both failed to resolve.
+
+200
+00:17:54,901 --> 00:18:01,164
+Every capability set reads zero,
+no-new-privileges is set, and seccomp is in
+filter mode.
+
+201
+00:18:01,632 --> 00:18:08,819
+The cgroup shows 512 megabytes of memory, no
+swap, 128 processes, one CPU.
+
+202
+00:18:08,819 --> 00:18:12,270
+Of 200 processes started, 80 were refused.
+
+203
+00:18:12,270 --> 00:18:17,457
+Allocating past the limit returned limit
+exceeded, exit 137.
+
+204
+00:18:17,457 --> 00:18:21,182
+A runaway loop with a three second timeout
+returned timed out.
+
+205
+00:18:21,638 --> 00:18:38,838
+While a sandbox container ran, docker
+inspect on the host showed user 1000,
+network none, a read-only root, all
+capabilities dropped, no-new-privileges,
+memory, CPU and process limits, a noexec
+tmp, and one read-only mount at work.
+
+206
+00:18:39,292 --> 00:18:44,717
+Now Lumen Goods, the demo repository,
+through the same executor with npm test.
+
+207
+00:18:44,717 --> 00:18:48,605
+The executor returned status exited, exit
+code zero.
+
+208
+00:18:48,605 --> 00:18:52,630
+Its output reads ten tests, ten pass, zero
+fail.
+
+209
+00:18:52,629 --> 00:18:55,892
+This run makes no claim about the planted
+regression.
+
+210
+00:18:56,346 --> 00:19:00,396
+Dependency preparation was not run here;
+this is from the docs.
+
+211
+00:19:00,396 --> 00:19:06,758
+A disposable container runs npm ci without
+scripts on an internal network with no
+route.
+
+212
+00:19:06,759 --> 00:19:09,659
+Only an egress proxy reaches the registry.
+
+213
+00:19:09,659 --> 00:19:14,371
+Then the network is removed, and the result
+is sealed and mounted read-only.
+
+214
+00:19:14,840 --> 00:19:17,665
+Without Docker, nothing falls back to the
+host.
+
+215
+00:19:17,665 --> 00:19:22,152
+A disabled executor reports unavailable, and
+its run call throws.
+
+216
+00:19:22,152 --> 00:19:27,903
+The pipeline code turns that into a blocked
+stage, with the reason sandbox unavailable.
+
+
+217
+00:19:28,857 --> 00:19:31,209
+This cart page has one planted bug.
+
+218
+00:19:31,509 --> 00:19:37,485
+A model plans browser steps, code validates
+them, and the sandbox runs them before the
+patch.
+
+219
+00:19:37,785 --> 00:19:41,937
+After the patch the same steps rerun; rules
+derive the outcome.
+
+220
+00:19:42,237 --> 00:19:49,173
+The review page shows both screenshots, and
+may claim a visible change only if the
+reproduction check passed.
+
+221
+00:19:49,473 --> 00:19:53,481
+Without Docker, the hosted demo records
+these runs as blocked.
+
+
+222
+00:19:54,381 --> 00:19:58,437
+A screenshot is stored, then read by a
+vision model on its own.
+
+223
+00:19:58,737 --> 00:20:03,657
+It is checked by its bytes, stored by hash
+and queued in the same transaction.
+
+224
+00:20:03,957 --> 00:20:11,133
+The model sees only the image, never the
+report text, and its output keeps visible
+and inferred items apart.
+
+225
+00:20:11,433 --> 00:20:17,985
+Optionally, a segmentation model marks where
+an element is, as a display aid, never
+evidence.
+
+
+226
+00:20:18,885 --> 00:20:22,677
+A recording is analyzed from a few frames,
+never the video.
+
+227
+00:20:22,977 --> 00:20:29,025
+The browser takes up to twelve keyframes and
+sends only those; the video stays on the
+computer.
+
+228
+00:20:29,325 --> 00:20:36,141
+The worker reads each frame; a text-only
+analysis then sees only the readings and
+timestamps.
+
+229
+00:20:36,441 --> 00:20:44,769
+Recording evidence is labelled reported or
+inferred, never observed, so it cannot move
+a hypothesis to supported or contradicted.
+
+
+230
+00:20:45,719 --> 00:20:47,994
+A screen recording is evidence too.
+
+231
+00:20:47,994 --> 00:20:59,481
+In the new-investigation form I attach a
+real screen recording of the shop-ui cart
+bug: someone opens the cart, adds a second
+lamp, and sees shipping charged at exactly
+fifty dollars.
+
+232
+00:20:59,481 --> 00:21:01,169
+The form says what will happen.
+
+233
+00:21:01,169 --> 00:21:06,056
+The browser takes up to twelve still frames
+from the file, and uploads only those.
+
+234
+00:21:06,056 --> 00:21:08,769
+The recording itself never leaves the
+computer.
+
+235
+00:21:09,229 --> 00:21:12,579
+The keyframes are taken in the browser and
+sent one by one.
+
+236
+00:21:13,035 --> 00:21:17,547
+Then a live Muse Spark model reads the
+frames, and the wait is sped up.
+
+237
+00:21:17,547 --> 00:21:20,097
+The panel says analyzed, not watched.
+
+238
+00:21:20,561 --> 00:21:23,911
+Here are the twelve keyframes, each with its
+timestamp.
+
+239
+00:21:24,367 --> 00:21:28,904
+What is visible, by time: the model
+describes the cart at each frame.
+
+240
+00:21:28,905 --> 00:21:33,792
+One lamp, a subtotal of twenty-five dollars,
+shipping four ninety-nine.
+
+241
+00:21:33,792 --> 00:21:41,779
+Later, two lamps, a subtotal of fifty
+dollars, and shipping still four
+ninety-nine, while the banner promises free
+shipping.
+
+242
+00:21:41,779 --> 00:21:43,204
+This is a model's reading.
+
+243
+00:21:43,204 --> 00:21:47,230
+It can contain errors, and it has not been
+checked against the repository.
+
+244
+00:21:47,685 --> 00:21:58,810
+Model inferences are kept apart, for example
+that the quantity changed between two
+frames, and a candidate list of reproduction
+steps that is labelled a guess, not a
+verified procedure.
+
+245
+00:21:59,267 --> 00:22:02,892
+And the panel lists what could not be
+determined from the keyframes.
+
+246
+00:22:03,361 --> 00:22:08,673
+A segmentation model, SAM, marked a region
+in one frame, here the banner.
+
+247
+00:22:08,673 --> 00:22:13,799
+That is a display aid: it shows where a
+model points, not proof of what is broken.
+
+248
+00:22:14,247 --> 00:22:18,897
+The investigation uses this analysis as
+reported and inferred context.
+
+249
+00:22:18,897 --> 00:22:24,647
+It is never treated as observed evidence, so
+on its own it cannot make a hypothesis
+supported.
+
+250
+00:22:24,647 --> 00:22:29,747
+I ran this one in analysis-only mode,
+because this scene needs no sandbox.
+
+
+251
+00:22:30,669 --> 00:22:36,453
+Apply, commit and push are separate
+requests; authorizing one never covers
+another.
+
+252
+00:22:36,753 --> 00:22:40,785
+Approve is a signed-in review decision, and
+changes no files.
+
+253
+00:22:41,085 --> 00:22:43,965
+Apply puts the diff into the local working
+tree.
+
+254
+00:22:44,265 --> 00:22:49,929
+Commit records the diff on a new branch
+after a secret scan, without touching the
+checkout.
+
+255
+00:22:50,229 --> 00:22:56,037
+Push sends that branch to a named remote,
+never forced, and refuses default branches.
+
+256
+00:22:56,337 --> 00:23:02,313
+All three need an owner session, every
+attempt is audited, and refusals use stable
+codes.
+
+
+257
+00:23:03,213 --> 00:23:07,845
+Nothing is captured until the user clicks,
+and everything is previewed first.
+
+258
+00:23:08,145 --> 00:23:13,665
+First run records consent and a token; a
+click captures the tab or a region.
+
+259
+00:23:13,965 --> 00:23:19,773
+The user blacks out regions, burned into the
+pixels, then reviews exactly what is sent.
+
+260
+00:23:20,073 --> 00:23:25,521
+Upload sends only a bearer token;
+idempotency keys make retries safe.
+
+261
+00:23:25,821 --> 00:23:32,277
+The upload queues a vision read, stored as
+derived evidence; an investigation is
+optional.
+
+262
+00:23:32,577 --> 00:23:36,993
+It can only reach the API address; web pages
+cannot message it.
+
+
+263
+00:23:37,893 --> 00:23:43,533
+The MCP server is a thin local client of the
+REST API for coding agents.
+
+264
+00:23:43,833 --> 00:23:48,393
+The agent starts it over standard input and
+output; it opens no port.
+
+265
+00:23:48,693 --> 00:23:53,421
+Calls use a bearer token with rate limits,
+and are audited without arguments.
+
+266
+00:23:53,721 --> 00:23:56,553
+Eleven of its fourteen tools are read-only.
+
+267
+00:23:56,853 --> 00:24:01,629
+Three create something: a question, a bug
+report or an investigation.
+
+268
+00:24:01,929 --> 00:24:08,961
+It can never approve a patch, apply, commit,
+push or run commands, even with all six
+scopes.
+
+
+269
+00:24:09,911 --> 00:24:12,748
+A coding agent can use Tracera through MCP.
+
+270
+00:24:12,749 --> 00:24:20,886
+This is the real stdio server, started by a
+real MCP client, and every frame in this
+scene is captured from that session.
+
+271
+00:24:20,886 --> 00:24:22,186
+Nothing is staged.
+
+272
+00:24:22,186 --> 00:24:24,386
+The client lists 14 tools.
+
+273
+00:24:24,386 --> 00:24:31,024
+Most are read-only, and three create
+something: a question, a bug report, or an
+investigation.
+
+274
+00:24:31,477 --> 00:24:34,014
+First call: list the repositories.
+
+275
+00:24:34,014 --> 00:24:38,452
+The server answers with the registered
+repositories and their index status.
+
+276
+00:24:38,907 --> 00:24:43,057
+Second: ask where free shipping is decided,
+and read the answer.
+
+277
+00:24:43,057 --> 00:24:47,832
+It is labelled live, and 5 of 5 claims are
+marked as supported by evidence.
+
+278
+00:24:47,832 --> 00:24:50,394
+Each claim carries the excerpts it cites.
+
+279
+00:24:50,849 --> 00:24:55,324
+Then the findings of the investigation from
+the Meet scene: one hypothesis.
+
+280
+00:24:55,324 --> 00:25:01,712
+Its state is confirmed by verification, and
+a rule set that state, not the agent and not
+the model.
+
+281
+00:25:02,167 --> 00:25:08,317
+And the patch diff, with what actually ran:
+the one-line change, the checks, and the
+recorded outcome.
+
+282
+00:25:08,317 --> 00:25:12,092
+The outcome is verified, and it is read from
+the stored record.
+
+283
+00:25:12,549 --> 00:25:14,986
+MCP clients read and propose.
+
+284
+00:25:14,986 --> 00:25:20,311
+The tool list has no tool that approves a
+patch, applies it, commits, or pushes.
+
+285
+00:25:20,311 --> 00:25:25,386
+A person approves in the web app, and
+applying is a separate, authorized action.
+
+286
+00:25:25,386 --> 00:25:29,799
+The token used here was scoped to this
+client, and it was revoked afterwards.
+
+
+287
+00:25:30,728 --> 00:25:35,360
+Tracera's data lives in PostgreSQL, in six
+groups of tables.
+
+288
+00:25:35,660 --> 00:25:40,004
+Identity and access holds users, sessions
+and tokens.
+
+289
+00:25:40,304 --> 00:25:44,384
+Repositories and graph holds snapshots and
+the code graph.
+
+290
+00:25:44,684 --> 00:25:48,788
+Reports and evidence holds bug reports and
+evidence assets.
+
+291
+00:25:49,088 --> 00:25:55,688
+Investigations hold steps, hypotheses,
+sandbox runs, patches and verification runs.
+
+292
+00:25:55,988 --> 00:25:59,276
+Actions and audit hold an append-only audit
+log.
+
+293
+00:25:59,576 --> 00:26:04,256
+Meetings hold transcripts, and confirming a
+candidate creates a bug report.
+
+294
+00:26:04,556 --> 00:26:11,588
+Row level security locks the Data API,
+queries are workspace scoped, and evidence
+is kept ninety days.
+
+
+295
+00:26:12,488 --> 00:26:18,128
+pg-boss is a job queue inside PostgreSQL: no
+Redis, no broker.
+
+296
+00:26:18,428 --> 00:26:24,836
+The API enqueues a job in the same
+transaction as its rows, so it exists only
+if they commit.
+
+297
+00:26:25,136 --> 00:26:30,896
+The worker takes one job at a time; a stage
+commits its outcome and the next job
+together.
+
+298
+00:26:31,196 --> 00:26:37,364
+A heartbeat reports status every fifteen
+seconds; a sweep every minute recovers
+stalled steps.
+
+
+299
+00:26:38,264 --> 00:26:45,200
+Everything outside the line is untrusted
+data; inside it, a model proposes and code
+decides.
+
+300
+00:26:45,500 --> 00:26:51,212
+Zod validates every boundary, and keys and
+tokens are redacted before any model call.
+
+301
+00:26:51,512 --> 00:26:58,400
+Models never act: they return strict JSON,
+and code checks citations and sets
+hypothesis states.
+
+302
+00:26:58,700 --> 00:27:04,940
+Nothing runs on the host: tests, installs
+and browsers run in locked-down Docker
+containers.
+
+303
+00:27:05,240 --> 00:27:13,616
+Queries are workspace-scoped; apply, commit
+and push are separate owner requests that
+tokens and MCP can never make.
+
+304
+00:27:13,916 --> 00:27:18,860
+Further guarantees cover the database,
+honest labels and repository paths.
+
+
+305
+00:27:19,760 --> 00:27:23,648
+The same code runs in both; the hosted demo
+has no Docker.
+
+306
+00:27:23,948 --> 00:27:29,780
+Hosted, a Vercel site forwards API calls to
+one Render service with Render Postgres.
+
+307
+00:27:30,080 --> 00:27:38,360
+So the hosted demo is analysis only:
+reproduction and verification are blocked;
+apply, commit and push are refused.
+
+308
+00:27:38,660 --> 00:27:46,052
+Locally, two commands start Postgres, the
+API, the worker and the web app; Docker can
+run the sandbox.
+
+
+309
+00:27:47,002 --> 00:27:49,102
+Security is part of the design.
+
+310
+00:27:49,102 --> 00:27:56,264
+Repository code never runs on the host: it
+runs in a Docker sandbox with no network and
+limited resources.
+
+311
+00:27:56,264 --> 00:27:57,652
+Models never act.
+
+312
+00:27:57,652 --> 00:28:01,089
+They return strict structured output that
+code validates.
+
+313
+00:28:01,089 --> 00:28:08,802
+Approval changes no files, and applying,
+committing, or pushing are separate actions
+that only a signed-in owner can authorize.
+
+314
+00:28:08,802 --> 00:28:19,177
+Secrets stay on the server and are redacted
+before every model call, every query is
+scoped to a workspace, and repository text
+is treated as untrusted data.
+
+315
+00:28:19,632 --> 00:28:21,120
+Now the honest limits.
+
+316
+00:28:21,120 --> 00:28:27,707
+The hosted site has no sandbox, so
+investigations there stop after analysis,
+and the page says so.
+
+317
+00:28:27,707 --> 00:28:35,570
+Models can be wrong, which is why every
+claim is labelled live or mock, observed or
+inferred, and a person decides.
+
+318
+00:28:35,570 --> 00:28:42,620
+Recording analysis rests on a few sampled
+keyframes, and its readings are inferred
+context, never observed.
+
+319
+00:28:42,620 --> 00:28:47,670
+And the laptop needs the internet for model
+calls, and for the optional Google Meet
+import.
+
+320
+00:28:48,134 --> 00:28:51,684
+To run it yourself you need Node, git, and
+Docker.
+
+321
+00:28:51,684 --> 00:29:03,496
+Run npm ci, then npm run setup, which checks
+the prerequisites, creates the environment
+file, starts PostgreSQL, and creates the
+owner and the demo repositories.
+
+322
+00:29:03,496 --> 00:29:08,221
+Then npm run local starts the API, the
+worker, and the web app.
+
+323
+00:29:08,221 --> 00:29:13,284
+Open it at 127.0.0.1, not localhost.
+
+324
+00:29:13,284 --> 00:29:17,696
+For live models, set the Meta provider and
+key in the environment file.
+
+325
+00:29:18,148 --> 00:29:18,961
+Tracera.
+
+326
+00:29:18,961 --> 00:29:20,736
+From symptom to certainty.
+
+327
+00:29:20,736 --> 00:29:24,811
+Evidence-backed, honest about what ran, and
+a person decides.
+
+328
+00:29:24,811 --> 00:29:25,611
+Thank you.
+
