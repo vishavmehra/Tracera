@@ -27,7 +27,7 @@ The judging account is a shared email-and-password account with the workspace **
 - [Reading the results: evidence and outcomes](#reading-the-results-evidence-and-outcomes)
 - [Features](#features)
 - [Architecture](#architecture)
-- [Model gateway](#model-gateway)
+- [Meta models and the model gateway](#meta-models-and-the-model-gateway)
 - [Authentication](#authentication)
 - [Data model](#data-model)
 - [Security model](#security-model)
@@ -223,11 +223,37 @@ The API never calls Docker: long work (indexing, each investigation stage, evide
 
 **Stack:** TypeScript on Node.js 24 (run directly, no build step), Fastify, PostgreSQL with Drizzle ORM, pg-boss for background jobs, Zod schemas shared through `packages/contracts`, React with Vite and Tailwind for the web app, Docker for the sandbox, Vitest and Playwright for tests.
 
-## Model gateway
+## Meta models and the model gateway
 
 ![Inference gateway and model routing](diagrams/png/10-inference-gateway.png)
 
-Every model call goes through one gateway with a task registry and three adapters: `meta` (Meta Model API), `openai_compatible`, and `mock` (deterministic, the default, labelled `[mock]`). The gateway redacts secrets before every call, enforces a daily budget (`TRACERA_LLM_DAILY_BUDGET_USD`), validates structured output against Zod schemas, and records provenance for each result. With Meta: Muse Spark 1.3 (`muse-spark-1.3`) reasons and reads images, Muse Wonder (`muse-wonder-1.0`) is an escalation path, and `sam-3.1` locates elements. Models return strict-schema JSON; code validates citations and sets states.
+Tracera's inference runs on Meta's Model API (base URL `https://api.meta.ai/v1`, set with `TRACERA_META_BASE_URL`; key `TRACERA_META_API_KEY`, read only by the server). All calls leave from one place, the inference gateway in [`apps/server/src/inference/`](apps/server/src/inference/): `gateway.ts` is the only path to a model, `providers.ts` holds the adapters, `tasks.ts` defines every task, and `segmentation.ts` calls SAM. No other code imports a provider SDK or calls a model API, and the browser, the extension and the MCP server never talk to Meta; they talk to Tracera's API. Claude Code and Codex are external clients of that API; Tracera's own inference never goes through them.
+
+**Models.** `muse-spark-1.3` (Muse Spark) does every text task and reads images. `muse-wonder-1.0` (Muse Wonder) is used only for a final patch attempt, and only when `TRACERA_ESCALATION_ENABLED=true`. `sam-3.1` (SAM) locates a named element in an image. A deterministic `mock` adapter replaces Meta in tests and is always labelled `[mock]`; an `openai_compatible` adapter exists as an alternative provider.
+
+**Endpoints.** Chat tasks are `POST {base}/chat/completions` (Meta takes `max_completion_tokens` and a prompt cache key); SAM is `POST {base}/responses` with a noun phrase and an image, and returns boxes or masks.
+
+**Where Meta is called.** Each row is one gateway task with its own prompt, prompt version, strict output schema, and token limit:
+
+| Task | Model | What Meta does | What is sent | Called from |
+|---|---|---|---|---|
+| `normalize_bug_report` | Muse Spark | Turns a report and its evidence into a structured report: expected and actual behavior, steps, search terms | Report text and evidence text (clipped to fixed limits), screenshot and recording readings | `modules/normalization.ts` |
+| `plan_reproduction` | Muse Spark | Plans a test-based reproduction | The normalized report and cited code excerpts | `modules/pipeline.ts` |
+| `plan_browser_reproduction` | Muse Spark | Plans browser steps for a UI bug | The report and the app's start path | `modules/pipeline.ts` |
+| `generate_hypotheses` | Muse Spark | Proposes ranked hypotheses that cite evidence | The report and the evidence pack (`CODE-n`, `COMMIT-n`, `REPRO-n`, ...) | `modules/pipeline.ts` |
+| `generate_patch` | Muse Spark; Muse Wonder for a final attempt when escalation is on | Proposes a patch for the supported hypothesis | The hypothesis and bounded excerpts of the target file | `modules/pipeline.ts` |
+| `assess_feasibility` | Muse Spark | Feasibility and change-size assessment | The question and code-graph context | `modules/assessment.ts` |
+| `answer_question` | Muse Spark | Answers a question about the codebase with citations | The question and retrieved graph nodes and code | `modules/assessment.ts` |
+| `extract_meeting_bugs` | Muse Spark | Proposes bug candidates from a transcript, each with quotes | The transcript's numbered segments | `modules/meeting-extract.ts` |
+| `observe_screenshot` | Muse Spark (vision) | Reads a screenshot into visible text, error messages, and interface elements | One image, up to `TRACERA_MAX_IMAGE_BYTES` | `modules/visual-evidence.ts` |
+| `analyze_recording` | Muse Spark | Builds a timeline from the keyframe readings (text only, no images) | The readings of the sampled keyframes | `modules/visual-recording.ts` |
+| SAM locate | SAM 3.1 | Marks where a named element sits, as a display aid | A keyframe or screenshot and a short noun phrase | `modules/visual-locate.ts` via `inference/segmentation.ts` |
+
+**What every call goes through.** The gateway checks the budget (`TRACERA_LLM_DAILY_BUDGET_USD`, plus per-investigation call and cost limits) and refuses with `budget_exceeded` when it is spent; redacts secrets (and optionally emails) from the prompt; sends it with bounded retries; and requires JSON that matches the task's Zod schema. Evidence is wrapped as untrusted blocks, so instructions inside repository files, logs, transcripts, or screenshots are data. Each call is recorded in `model_executions` with the task, prompt version, provider, model, whether it ran live or as a mock, and the redaction count (listed at `GET /api/v1/investigations/{id}/model-executions`), and results carry `[live]` or `[mock]`.
+
+**What Meta never does.** Models only propose. Code validates every citation, sets hypothesis states, and writes `verification_runs.outcome`; the sandbox runs the tests; people approve and authorize every action. These steps make no model call: indexing the code graph, patch impact, sandbox runs, verification, the authorized actions, and the MCP tools (which call Tracera's REST API).
+
+**What leaves the server.** Only what a task sends: bounded text excerpts of your report, code, and transcript, and the images you attach or the keyframes the browser samples, always after redaction. In one recorded end-to-end run (a screen recording of the cart bug, through to a verified, applied patch) Tracera made 18 Muse Spark calls and 6 SAM calls, about $0.18 in total.
 
 ## Authentication
 
