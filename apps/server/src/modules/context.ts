@@ -6,7 +6,12 @@ import type { EvidenceItemKind, FieldProvenance } from "../db/schema.ts";
 import { isPathInside } from "../lib/fs.ts";
 import { git } from "../lib/git.ts";
 import { TEST_FILE } from "./graph-extract.ts";
-import { listTree, readBlob, type TreeEntry } from "./workspace.ts";
+import {
+	listTree,
+	readBlob,
+	sourceCachePath,
+	type TreeEntry,
+} from "./workspace.ts";
 
 export { TEST_FILE };
 
@@ -41,8 +46,10 @@ export type PackItem = {
  */
 export async function verifySourcePath(
 	config: Pick<Config, "dataDir" | "repoRoots" | "sourceRoot">,
-	repo: { sourceType: string; sourceRef: string },
+	repo: { id: string; sourceType: string; sourceRef: string },
 ): Promise<string> {
+	// GitHub repositories are read from Tracera's own bare cache, which only the sync job fills.
+	if (repo.sourceType === "git_url") return verifySourceCache(config, repo.id);
 	const stat = await lstat(repo.sourceRef).catch(() => null);
 	if (!stat)
 		throw new ContextError(
@@ -87,6 +94,31 @@ export async function verifySourcePath(
 		throw new ContextError(
 			"repository_path_not_allowed",
 			"The repository's .git must be a directory (gitdir redirects are not allowed)",
+		);
+	return real;
+}
+
+/** The source cache of a GitHub repository: a plain directory exactly where Tracera put it. */
+async function verifySourceCache(
+	config: Pick<Config, "dataDir">,
+	repositoryId: string,
+): Promise<string> {
+	const cache = sourceCachePath(config, repositoryId);
+	const stat = await lstat(cache).catch(() => null);
+	if (!stat)
+		throw new ContextError(
+			"repository_unavailable",
+			"The repository has not been fetched from GitHub yet; synchronize it first",
+		);
+	const real = await realpath(cache);
+	if (
+		stat.isSymbolicLink() ||
+		!stat.isDirectory() ||
+		!(isPathInside(real, cache) && isPathInside(cache, real))
+	)
+		throw new ContextError(
+			"repository_path_not_allowed",
+			"The repository's source cache is not a plain directory",
 		);
 	return real;
 }

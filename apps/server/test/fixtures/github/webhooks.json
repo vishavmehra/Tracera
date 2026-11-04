@@ -1,0 +1,157 @@
+{
+	"_provenance": "Hand-built from GitHub's documented webhook payload shapes (trimmed), not recorded from a live delivery. Commit SHAs are replaced by the tests. Re-record after the GitHub App is registered (B-01).",
+	"push": {
+		"ref": "refs/heads/main",
+		"before": "1111111111111111111111111111111111111111",
+		"after": "2222222222222222222222222222222222222222",
+		"repository": {
+			"id": 7,
+			"node_id": "R_kgDOTEST07",
+			"name": "shop",
+			"full_name": "acme/shop",
+			"private": true,
+			"owner": {
+				"name": "acme",
+				"email": null,
+				"login": "acme",
+				"id": 1001,
+				"type": "Organization"
+			},
+			"html_url": "https://github.com/acme/shop",
+			"default_branch": "main",
+			"master_branch": "main"
+		},
+		"pusher": { "name": "dev-one", "email": "dev.one@example.com" },
+		"sender": { "login": "dev-one", "id": 2002, "type": "User" },
+		"installation": {
+			"id": 42,
+			"node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDI="
+		},
+		"created": false,
+		"deleted": false,
+		"forced": false,
+		"base_ref": null,
+		"compare": "https://github.com/acme/shop/compare/111111111111...222222222222",
+		"commits": [
+			{
+				"id": "2222222222222222222222222222222222222222",
+				"tree_id": "3333333333333333333333333333333333333333",
+				"distinct": true,
+				"message": "Fix the checkout total; rotate sk-live-TRACERA-TEST-ONLY-0000000000",
+				"timestamp": "2026-10-26T10:00:00Z",
+				"url": "https://github.com/acme/shop/commit/2222222222222222222222222222222222222222",
+				"author": {
+					"name": "Dev One",
+					"email": "dev.one@example.com",
+					"username": "dev-one"
+				},
+				"committer": {
+					"name": "Dev One",
+					"email": "dev.one@example.com",
+					"username": "dev-one"
+				},
+				"added": [],
+				"removed": [],
+				"modified": ["src/cart.js"]
+			}
+		],
+		"head_commit": {
+			"id": "2222222222222222222222222222222222222222",
+			"message": "Fix the checkout total; rotate sk-live-TRACERA-TEST-ONLY-0000000000",
+			"author": {
+				"name": "Dev One",
+				"email": "dev.one@example.com",
+				"username": "dev-one"
+			}
+		}
+	},
+	"pull_request": {
+		"action": "opened",
+		"number": 5,
+		"pull_request": {
+			"id": 900005,
+			"number": 5,
+			"state": "open",
+			"title": "Use cents for totals",
+			"body": "Contact dev.two@example.com for context.",
+			"user": { "login": "dev-two", "id": 2003, "type": "User" },
+			"head": {
+				"label": "acme:feature/cents",
+				"ref": "feature/cents",
+				"sha": "4444444444444444444444444444444444444444",
+				"repo": { "id": 7, "full_name": "acme/shop" }
+			},
+			"base": {
+				"label": "acme:main",
+				"ref": "main",
+				"sha": "1111111111111111111111111111111111111111",
+				"repo": { "id": 7, "full_name": "acme/shop" }
+			}
+		},
+		"repository": {
+			"id": 7,
+			"name": "shop",
+			"full_name": "acme/shop",
+			"private": true,
+			"default_branch": "main"
+		},
+		"sender": { "login": "dev-two", "id": 2003, "type": "User" },
+		"installation": { "id": 42 }
+	},
+	"installation": {
+		"action": "new_permissions_accepted",
+		"installation": {
+			"id": 42,
+			"account": { "login": "acme", "id": 1001, "type": "Organization" },
+			"repository_selection": "selected",
+			"app_id": 123456,
+			"app_slug": "tracera-test",
+			"target_type": "Organization",
+			"permissions": {
+				"contents": "read",
+				"metadata": "read",
+				"pull_requests": "read"
+			},
+			"events": ["pull_request", "push", "repository"],
+			"suspended_at": null
+		},
+		"repositories": [
+			{ "id": 7, "name": "shop", "full_name": "acme/shop", "private": true }
+		],
+		"sender": { "login": "dev-one", "id": 2002, "type": "User" }
+	},
+	"installation_repositories": {
+		"action": "removed",
+		"installation": {
+			"id": 42,
+			"account": { "login": "acme", "id": 1001, "type": "Organization" },
+			"repository_selection": "selected",
+			"permissions": { "contents": "read", "metadata": "read" },
+			"events": ["push"]
+		},
+		"repository_selection": "selected",
+		"repositories_added": [],
+		"repositories_removed": [
+			{ "id": 7, "name": "shop", "full_name": "acme/shop", "private": true }
+		],
+		"sender": { "login": "dev-one", "id": 2002, "type": "User" }
+	},
+	"repository": {
+		"action": "edited",
+		"changes": { "default_branch": { "from": "main" } },
+		"repository": {
+			"id": 7,
+			"name": "shop",
+			"full_name": "acme/shop",
+			"private": true,
+			"default_branch": "trunk"
+		},
+		"sender": { "login": "dev-one", "id": 2002, "type": "User" },
+		"installation": { "id": 42 }
+	},
+	"ping": {
+		"zen": "Keep it logically awesome.",
+		"hook_id": 77,
+		"hook": { "type": "App", "id": 77, "events": ["push", "pull_request"] }
+	}
+}

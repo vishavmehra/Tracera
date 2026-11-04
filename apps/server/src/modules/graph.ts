@@ -5,7 +5,7 @@ import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
 import type { Config } from "../config.ts";
-import { type Db, withTransaction } from "../db/client.ts";
+import { type Db, type QueueDb, withTransaction } from "../db/client.ts";
 import {
 	graphEdges,
 	graphFileCache,
@@ -18,7 +18,7 @@ import { git, readBlobs, resolveCommit } from "../lib/git.ts";
 import { AppError } from "../lib/http.ts";
 import { newId } from "../lib/ids.ts";
 import { enqueueIndex } from "../queue.ts";
-import { audit, WORKER_ACTOR } from "./audit.ts";
+import { type Actor, audit, WORKER_ACTOR } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
 import {
 	ContextError,
@@ -566,6 +566,19 @@ const toAppError = (error: unknown) =>
 		? new AppError(422, error.code, error.message)
 		: error;
 
+/** Who asked for work: a user or token through the API, or the system (webhooks, reconciliation). */
+export type Requester = {
+	workspaceId: string;
+	userId: string | null;
+	actor: Actor;
+};
+
+export const requesterOf = (ctx: AuthContext): Requester => ({
+	workspaceId: ctx.workspaceId,
+	userId: ctx.userId,
+	actor: actorOf(ctx),
+});
+
 /**
  * Queues indexing of one commit (default: the repository's default branch). Idempotent per commit
  * and extractor version: an existing snapshot is returned; a failed one is re-queued.
@@ -589,90 +602,119 @@ export async function requestIndex(
 			"commit_not_found",
 			`${ref} does not resolve to a commit`,
 		);
+	return withTransaction(deps.pool, (tx) =>
+		queueSnapshot(
+			deps,
+			tx,
+			requesterOf(ctx),
+			{ repositoryId: repo.id, ref, commitSha },
+			requestId,
+		),
+	);
+}
+
+/**
+ * The indexing service's entry point for one exact commit, inside the caller's transaction (index
+ * requests, registration, and repository synchronization all come through here). Idempotent per
+ * commit and extractor version: an existing snapshot is returned (200); a failed or cancelled one is
+ * queued again (202).
+ */
+export async function queueSnapshot(
+	deps: { boss: PgBoss; config: Config },
+	{ db, queueDb }: { db: Db; queueDb: QueueDb },
+	requester: Requester,
+	target: { repositoryId: string; ref: string; commitSha: string },
+	requestId: string | null,
+	metadata: Record<string, unknown> = {},
+): Promise<{ status: 200 | 202; snapshot: ReturnType<typeof toSnapshotView> }> {
+	const { repositoryId, ref, commitSha } = target;
 	const bySha = and(
-		eq(repositorySnapshots.repositoryId, repo.id),
+		eq(repositorySnapshots.repositoryId, repositoryId),
 		eq(repositorySnapshots.commitSha, commitSha),
 		eq(repositorySnapshots.extractorVersion, EXTRACTOR_VERSION),
 	);
-	return withTransaction(deps.pool, async ({ db, queueDb }) => {
-		const [existing] = await db
-			.select()
-			.from(repositorySnapshots)
-			.where(bySha)
-			.for("update")
-			.limit(1);
-		// A ready snapshot is only fully usable with its mirror (search and source excerpts read it). Where
-		// the data directory is temporary the mirror disappears, and indexing again is what restores it.
-		const mirrorGone =
-			existing?.status === "ready" &&
-			!(await stat(mirrorPath(deps.config, existing.id)).catch(() => null));
-		if (
-			existing &&
-			existing.status !== "failed" &&
-			existing.status !== "cancelled" &&
-			!mirrorGone
-		)
-			return { status: 200 as const, snapshot: toSnapshotView(existing) };
-		let id = existing?.id;
-		if (existing)
-			await db
-				.update(repositorySnapshots)
-				.set({
-					status: "queued",
-					error: null,
-					progress: null,
-					cancelRequestedAt: null,
-					startedAt: null,
-					finishedAt: null,
-					requestedBy: ctx.userId,
-					updatedAt: new Date(),
-				})
-				.where(eq(repositorySnapshots.id, existing.id));
-		else {
-			const [inserted] = await db
-				.insert(repositorySnapshots)
-				.values({
-					id: newId("snap"),
-					workspaceId: ctx.workspaceId,
-					repositoryId: repo.id,
-					ref,
-					commitSha,
-					status: "queued",
-					extractorVersion: EXTRACTOR_VERSION,
-					requestedBy: ctx.userId,
-				})
-				.onConflictDoNothing()
-				.returning({ id: repositorySnapshots.id });
-			id = inserted?.id;
-		}
-		if (!id) {
-			// A concurrent request created it first.
-			const [row] = await db
-				.select()
-				.from(repositorySnapshots)
-				.where(bySha)
-				.limit(1);
-			if (!row) throw new Error("snapshot vanished during index request");
-			return { status: 200 as const, snapshot: toSnapshotView(row) };
-		}
-		await enqueueIndex(deps.boss, queueDb, { snapshotId: id });
-		await audit(db, {
-			workspaceId: ctx.workspaceId,
-			actor: actorOf(ctx),
-			action: "repository.index_requested",
-			targetType: "repository_snapshot",
-			targetId: id,
-			metadata: { repository_id: repo.id, commit_sha: commitSha, ref },
-			requestId,
-		});
+	const [existing] = await db
+		.select()
+		.from(repositorySnapshots)
+		.where(bySha)
+		.for("update")
+		.limit(1);
+	// A ready snapshot is only fully usable with its mirror (search and source excerpts read it). Where
+	// the data directory is temporary the mirror disappears, and indexing again is what restores it.
+	const mirrorGone =
+		existing?.status === "ready" &&
+		!(await stat(mirrorPath(deps.config, existing.id)).catch(() => null));
+	if (
+		existing &&
+		existing.status !== "failed" &&
+		existing.status !== "cancelled" &&
+		!mirrorGone
+	)
+		return { status: 200 as const, snapshot: toSnapshotView(existing) };
+	let id = existing?.id;
+	if (existing)
+		await db
+			.update(repositorySnapshots)
+			.set({
+				status: "queued",
+				error: null,
+				progress: null,
+				cancelRequestedAt: null,
+				startedAt: null,
+				finishedAt: null,
+				requestedBy: requester.userId,
+				updatedAt: new Date(),
+			})
+			.where(eq(repositorySnapshots.id, existing.id));
+	else {
+		const [inserted] = await db
+			.insert(repositorySnapshots)
+			.values({
+				id: newId("snap"),
+				workspaceId: requester.workspaceId,
+				repositoryId,
+				ref,
+				commitSha,
+				status: "queued",
+				extractorVersion: EXTRACTOR_VERSION,
+				requestedBy: requester.userId,
+			})
+			.onConflictDoNothing()
+			.returning({ id: repositorySnapshots.id });
+		id = inserted?.id;
+	}
+	if (!id) {
+		// A concurrent request created it first.
 		const [row] = await db
 			.select()
 			.from(repositorySnapshots)
-			.where(eq(repositorySnapshots.id, id))
+			.where(bySha)
 			.limit(1);
 		if (!row) throw new Error("snapshot vanished during index request");
-		return { status: 202 as const, snapshot: toSnapshotView(row) };
+		return { status: 200 as const, snapshot: toSnapshotView(row) };
+	}
+	await enqueueIndex(deps.boss, queueDb, { snapshotId: id });
+	await audit(db, {
+		workspaceId: requester.workspaceId,
+		actor: requester.actor,
+		action: "repository.index_requested",
+		targetType: "repository_snapshot",
+		targetId: id,
+		metadata: {
+			repository_id: repositoryId,
+			commit_sha: commitSha,
+			ref,
+			...metadata,
+		},
+		requestId,
 	});
+	const [row] = await db
+		.select()
+		.from(repositorySnapshots)
+		.where(eq(repositorySnapshots.id, id))
+		.limit(1);
+	if (!row) throw new Error("snapshot vanished during index request");
+	return { status: 202 as const, snapshot: toSnapshotView(row) };
 }
 
 /**

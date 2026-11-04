@@ -16,7 +16,12 @@ import { enqueuePatchImpact } from "../queue.ts";
 import { audit, WORKER_ACTOR } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
 import { ContextError, verifySourcePath } from "./context.ts";
-import { analyzeCommit, type CommitAnalysis } from "./graph.ts";
+import {
+	analyzeCommit,
+	type CommitAnalysis,
+	type Requester,
+	requesterOf,
+} from "./graph.ts";
 import {
 	CODE_LANGUAGES,
 	EXTRACTOR_VERSION,
@@ -358,14 +363,18 @@ const toAppError = (error: unknown) =>
  */
 export async function createPatchAnalysis(
 	deps: { db: Db; pool: pg.Pool; boss: PgBoss; config: Config },
-	ctx: AuthContext,
+	/** A system requester (a pull-request webhook) names the user the analysis is recorded for. */
+	requester: AuthContext | Requester,
 	repositoryId: string,
 	input: PatchImpactRequest,
-	requestId: string,
+	requestId: string | null,
 ): Promise<{
 	status: 200 | 202;
 	analysis: ReturnType<typeof toAnalysisView>;
 }> {
+	const ctx = "kind" in requester ? requesterOf(requester) : requester;
+	const createdBy = ctx.userId;
+	if (!createdBy) throw new Error("A patch analysis needs a requesting user");
 	const repo = await getRepositoryRow(deps.db, ctx.workspaceId, repositoryId);
 	if (input.diff !== undefined) {
 		const check = checkSuppliedDiff(input.diff);
@@ -456,12 +465,12 @@ export async function createPatchAnalysis(
 				options,
 				cacheKey,
 				status: "queued",
-				createdBy: ctx.userId,
+				createdBy,
 			});
 		await enqueuePatchImpact(deps.boss, queueDb, { analysisId: id });
 		await audit(db, {
 			workspaceId: ctx.workspaceId,
-			actor: actorOf(ctx),
+			actor: ctx.actor,
 			action: "patch_impact.requested",
 			targetType: "patch_analysis",
 			targetId: id,

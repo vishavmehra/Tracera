@@ -5,6 +5,7 @@ import {
 	ConfidenceSchema,
 	EdgeCertaintySchema,
 	EvidenceRefSchema,
+	GitHubRepositoryCandidateSchema,
 	HypothesisStateSchema,
 	IntegrationSchema,
 	InvestigationStageSchema,
@@ -15,6 +16,7 @@ import {
 	PatchImpactResultSchema,
 	PatchStatusSchema,
 	ProviderMeetingSchema,
+	RepositoryUpdateSchema,
 	ScopeSchema,
 	SnapshotStatusSchema,
 	StepStatusSchema,
@@ -867,3 +869,24 @@ export const PatchActionResponseSchema = z.object({
 	action: PatchActionSchema,
 });
 export type PatchAction = z.infer<typeof PatchActionSchema>;
+
+// ---- GitHub App ----
+/** GET /github/install: where to send the owner to install the App, with a state bound to them. */
+export const GitHubInstallUrlSchema = z.object({
+	url: z.string(),
+	expires_in_seconds: z.number(),
+});
+/** GET /github/installations/{id}/repositories: what the installation can access. */
+export const GitHubRepositoryListSchema = z.object({
+	repositories: z.array(GitHubRepositoryCandidateSchema),
+	truncated: z.boolean(),
+});
+/** POST /github/installations/{id}/repositories (201): the registered repository and its first sync. */
+export const GitHubConnectResponseSchema = z.object({
+	repository: z.object({ id: idSchema("repo"), name: z.string() }),
+	update: RepositoryUpdateSchema,
+});
+/** POST /repositories/{id}/sync (200 or 202): the update that will bring the ref up to date. */
+export const GitHubSyncResponseSchema = z.object({
+	update: RepositoryUpdateSchema,
+});

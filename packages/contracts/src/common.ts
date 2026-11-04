@@ -29,6 +29,10 @@ export const ID_PREFIXES = [
 	"cand",
 	"int",
 	"act",
+	// GitHub App installation, repository updates, webhook deliveries.
+	"ghi",
+	"rup",
+	"whd",
 ] as const;
 export type IdPrefix = (typeof ID_PREFIXES)[number];
 

@@ -11,6 +11,9 @@ export const QUEUES = {
 	dependencies: "dependencies.prepare",
 	observe: "evidence.observe",
 	locate: "evidence.locate",
+	// Repository synchronization: one job per update; reconciliation is sent throttled.
+	sync: "repository.sync",
+	reconcile: "repository.reconcile",
 	recording: "evidence.recording",
 } as const;
 
@@ -30,6 +33,7 @@ export type LocateJob = {
 	workspaceId: string;
 	phrase: string;
 };
+export type SyncJob = { updateId: string };
 export type StageJob = {
 	investigationId: string;
 	stage: InvestigationStage;
@@ -65,6 +69,9 @@ export async function startQueue(
 		// One vision call: a few attempts of at most TRACERA_LLM_TIMEOUT_MS each.
 		[QUEUES.observe, 900],
 		[QUEUES.locate, 600],
+		// A first fetch of a large repository may take minutes (fetch timeout 600 s).
+		[QUEUES.sync, 900],
+		[QUEUES.reconcile, 600],
 		// Up to twelve frame readings, one analysis, and a few segmentation calls.
 		[QUEUES.recording, 1800],
 	];
@@ -118,6 +125,9 @@ export const enqueueObserve = (boss: PgBoss, db: QueueDb, job: ObserveJob) =>
 /** Locates a named UI element in one screenshot with the segmentation model. */
 export const enqueueLocate = (boss: PgBoss, db: QueueDb, job: LocateJob) =>
 	boss.send(QUEUES.locate, job, { db });
+
+export const enqueueSync = (boss: PgBoss, db: QueueDb, job: SyncJob) =>
+	boss.send(QUEUES.sync, job, { db, singletonKey: job.updateId });
 
 /** Reads the keyframes of one screen recording and analyzes them together. */
 export const enqueueRecording = (

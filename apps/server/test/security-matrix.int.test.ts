@@ -56,7 +56,10 @@ afterAll(async () => ctx.close());
 
 const SCOPES = ScopeSchema.options;
 const protectedRoutes = ROUTE_RULES.filter(
-	(rule) => rule.access !== "public" && rule.access !== "login",
+	(rule) =>
+		rule.access !== "public" &&
+		rule.access !== "login" &&
+		rule.access !== "signed",
 );
 const sessionOnly = ROUTE_RULES.filter(
 	(rule) => rule.access === "session" || rule.access === "owner",
@@ -102,6 +105,10 @@ const BODY: Record<string, unknown> = {
 	},
 	"POST /api/v1/investigations": { bug_report_id: newId("bug") },
 	"POST /api/v1/evidence/:id/locate": { phrase: "button" },
+	"POST /api/v1/github/installations/:id/repositories": {
+		github_repository_id: 7,
+		commands: { install: "npm ci --ignore-scripts", test: "npm test" },
+	},
 	"POST /api/v1/bug-reports/:id/recordings": {
 		recording_id: "recording_abc123",
 	},
@@ -393,7 +400,8 @@ describe("authorization", () => {
 
 describe("CSRF", () => {
 	const cookieMutations = ROUTE_RULES.filter(
-		(rule) => isMutating(rule) && rule.access !== "public",
+		(rule) =>
+			isMutating(rule) && rule.access !== "public" && rule.access !== "signed",
 	);
 
 	it("rejects cookie-authenticated changes without the header or from another origin (403 csrf_failed)", async () => {

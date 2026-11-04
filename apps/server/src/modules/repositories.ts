@@ -3,6 +3,7 @@ import path from "node:path";
 import {
 	ACTIVE_INVESTIGATION_STATUSES,
 	type CreateRepositoryRequest,
+	type RepositorySyncSummary,
 	type UpdateRepositoryRequest,
 } from "@tracera/contracts";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -26,7 +27,8 @@ import { newId } from "../lib/ids.ts";
 import { audit } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
 import { verifySourcePath } from "./context.ts";
-import { mirrorPath, removeWorkspace } from "./workspace.ts";
+import { emptySyncSummary, syncSummaries } from "./sync-status.ts";
+import { mirrorPath, removeWorkspace, sourceCachePath } from "./workspace.ts";
 
 type RepositoryRow = typeof repositories.$inferSelect;
 type SnapshotRow = typeof repositorySnapshots.$inferSelect;
@@ -35,7 +37,8 @@ type Source = CreateRepositoryRequest["source"];
 /**
  * Where a repository's source comes from. A provider resolves the registration input to a local git
  * work tree that Tracera may clone from; everything after that (clone, index, sandbox) is shared.
- * Remote providers (HTTPS clones, hosted Git APIs) would plug in here; none exists yet.
+ * GitHub repositories are not registered here: the GitHub App connection (github.ts) creates them,
+ * and their source is Tracera's own cache (see `verifySourcePath`).
  */
 type SourceAdapter = {
 	locate(
@@ -100,7 +103,7 @@ const SOURCE_ADAPTERS: Record<Source["type"], SourceAdapter> = {
 			throw new AppError(
 				422,
 				"source_type_not_available",
-				"Remote Git repositories are not supported yet; clone the repository under TRACERA_REPO_ROOTS and register the local path",
+				"Arbitrary Git URLs are not supported: connect GitHub repositories through the GitHub App (POST /api/v1/github/installations/{id}/repositories), or clone under TRACERA_REPO_ROOTS and register the local path",
 			);
 		},
 	},
@@ -208,7 +211,11 @@ async function latestSnapshots(
 
 export async function getRepository(db: Db, workspaceId: string, id: string) {
 	const row = await getRepositoryRow(db, workspaceId, id);
-	return toView(row, (await latestSnapshots(db, [row.id])).get(row.id));
+	const [latest, sync] = await Promise.all([
+		latestSnapshots(db, [row.id]),
+		syncSummaries(db, [row.id]),
+	]);
+	return toView(row, latest.get(row.id), sync.get(row.id));
 }
 
 export async function listRepositories(db: Db, workspaceId: string) {
@@ -217,11 +224,12 @@ export async function listRepositories(db: Db, workspaceId: string) {
 		.from(repositories)
 		.where(eq(repositories.workspaceId, workspaceId))
 		.orderBy(desc(repositories.createdAt));
-	const latest = await latestSnapshots(
-		db,
-		rows.map((row) => row.id),
-	);
-	return rows.map((row) => toView(row, latest.get(row.id)));
+	const ids = rows.map((row) => row.id);
+	const [latest, sync] = await Promise.all([
+		latestSnapshots(db, ids),
+		syncSummaries(db, ids),
+	]);
+	return rows.map((row) => toView(row, latest.get(row.id), sync.get(row.id)));
 }
 
 /** Owner-only changes to a registration. A new default branch must resolve in the repository now. */
@@ -349,6 +357,8 @@ export async function deleteRepository(
 		};
 	});
 	await Promise.all([
+		// A GitHub repository's source cache; absent for local repositories.
+		rm(sourceCachePath(deps.config, row.id), { recursive: true, force: true }),
 		...removed.snapshots.map((snapshot) =>
 			rm(mirrorPath(deps.config, snapshot), { recursive: true, force: true }),
 		),
@@ -365,7 +375,11 @@ export async function deleteRepository(
 	};
 }
 
-function toView(row: RepositoryRow, latest: SnapshotRow | undefined) {
+function toView(
+	row: RepositoryRow,
+	latest: SnapshotRow | undefined,
+	sync: RepositorySyncSummary | undefined,
+) {
 	return {
 		id: row.id,
 		name: row.name,
@@ -397,6 +411,8 @@ function toView(row: RepositoryRow, latest: SnapshotRow | undefined) {
 					finished_at: latest.finishedAt?.toISOString() ?? null,
 				}
 			: null,
+		/** Pending and failed updates and failed webhook deliveries; details at /sync. */
+		sync: sync ?? emptySyncSummary(),
 		created_at: row.createdAt.toISOString(),
 		updated_at: row.updatedAt.toISOString(),
 	};

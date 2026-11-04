@@ -9,6 +9,7 @@ import { setupBenchShop } from "../../../scripts/bench-setup.ts";
 import {
 	authorizedActions,
 	evidenceAssets,
+	githubInstallations,
 	integrationConnections,
 } from "../src/db/schema.ts";
 import { putBlob } from "../src/lib/fs.ts";
@@ -478,6 +479,20 @@ beforeAll(async () => {
 		accessTokenSealed: "sealed",
 	});
 
+	// The owner's GitHub App installation (no GitHub call is ever made for it).
+	ids.installations = newId("ghi");
+	await ctx.db.insert(githubInstallations).values({
+		id: ids.installations,
+		workspaceId: ownerWorkspaceId,
+		installationId: 424242,
+		accountLogin: "isolation-org",
+		accountType: "Organization",
+		repositorySelection: "selected",
+		permissions: { contents: "read", metadata: "read" },
+		events: [],
+		createdBy: ownerUserId,
+	});
+
 	// Workspace B: an owner with every privilege, a full-scope token, and an indexed repository.
 	await createOwner(ctx.db, "intruder@example.com");
 	const intruderCookie = await login(ctx, "intruder@example.com");
@@ -558,6 +573,10 @@ function requestFor(method: Method, routePath: string) {
 			trace: `TypeError: boom\n    at averageOrderValueCents (${B3.file}:3:10)`,
 		},
 		"POST /api/v1/evidence/:id/locate": { phrase: "button" },
+		"POST /api/v1/github/installations/:id/repositories": {
+			github_repository_id: 7,
+			commands: { install: "npm ci --ignore-scripts", test: "npm test" },
+		},
 		"POST /api/v1/bug-reports/:id/recordings": {
 			recording_id: "recording_abc123",
 		},

@@ -7,11 +7,13 @@ import {
 	type ChangeImpactRequest,
 	type ConfirmMeetingCandidateRequest,
 	ConfirmMeetingCandidateResponseSchema,
+	type ConnectGitHubRepositoryRequest,
 	type CreateBugReportRequest,
 	type CreateInvestigationRequest,
 	type CreateRepositoryRequest,
 	EvidenceLocationsResponseSchema,
 	EvidenceObservationsResponseSchema,
+	GitHubStatusSchema,
 	type GoogleSignInRequest,
 	type ImportMeetingRequest,
 	type LoginRequest,
@@ -20,6 +22,7 @@ import {
 	type Problem,
 	ProblemSchema,
 	RecordingsResponseSchema,
+	RepositorySyncStatusSchema,
 	RuntimeEvidenceResponseSchema,
 	type UpdateMeetingCandidateRequest,
 	type UploadMeetingTranscriptRequest,
@@ -31,6 +34,10 @@ import {
 	BugReportResponseSchema,
 	ChangeImpactSchema,
 	FindingsSchema,
+	GitHubConnectResponseSchema,
+	GitHubInstallUrlSchema,
+	GitHubRepositoryListSchema,
+	GitHubSyncResponseSchema,
 	HistorySchema,
 	IntegrationListSchema,
 	InvestigationListSchema,
@@ -584,3 +591,30 @@ export const requestRecordingRetry = (
 /** What this server can do: its environment, its inference mode, and the status of each capability. */
 export const getCapabilities = () =>
 	request("/api/v1/capabilities", CapabilitiesResponseSchema);
+
+// ---- GitHub App ----
+export const getGitHubStatus = () =>
+	request("/api/v1/github/status", GitHubStatusSchema);
+export const getGitHubInstallUrl = () =>
+	request("/api/v1/github/install", GitHubInstallUrlSchema);
+export const listGitHubRepositories = (installationId: string) =>
+	request(
+		`/api/v1/github/installations/${enc(installationId)}/repositories`,
+		GitHubRepositoryListSchema,
+	);
+export const connectGitHubRepository = (
+	installationId: string,
+	input: ConnectGitHubRepositoryRequest,
+) =>
+	request(
+		`/api/v1/github/installations/${enc(installationId)}/repositories`,
+		GitHubConnectResponseSchema,
+		{ method: "POST", body: input },
+	);
+export const getRepositorySync = (id: string) =>
+	request(`${repositoryPath(id)}/sync`, RepositorySyncStatusSchema);
+export const syncRepository = (id: string) =>
+	request(`${repositoryPath(id)}/sync`, GitHubSyncResponseSchema, {
+		method: "POST",
+		body: {},
+	});

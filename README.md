@@ -103,6 +103,7 @@ Each feature below covers what it does and how it works.
 - [Screenshot understanding](#screenshot-understanding)
 - [Screen recordings](#screen-recordings)
 - [Reproduction in the sandbox](#reproduction-in-the-sandbox)
+- [GitHub sync](#github-sync)
 - [Review and authorized actions](#review-and-authorized-actions)
 - [Meetings and Google Meet](#meetings-and-google-meet)
 - [Chrome extension](#chrome-extension)
@@ -140,6 +141,19 @@ Attach a screen recording. The browser samples keyframes (the first, the last, a
 Dependencies are installed from lockfiles without lifecycle scripts, through a proxy that admits only the configured registry. Tests and checks run in a container with no network, a read-only root filesystem, a non-root user, dropped capabilities, and CPU, memory, process, and time limits. For UI bugs Tracera starts the registered app in the sandbox, reproduces the bug in a browser, and runs the same steps against the patched app; the review page shows the before and after screenshots with each step's result.
 
 ![Runtime demo: shop-ui before and after](diagrams/png/14-runtime-demo.png)
+
+### GitHub sync
+
+![GitHub App sync](diagrams/png/26-github-app-sync.png)
+
+Besides local paths, repositories can come from GitHub through a **GitHub App**. On the Repositories page the owner clicks **Connect GitHub**, installs the App on an account and the repositories to share, returns to Tracera, picks a repository with **Connect** (its install and test commands are the two fields above the list), and presses **Sync** whenever the branch moved. The worker fetches the repository into a bare cache at `<TRACERA_DATA_DIR>/sources/<repository id>.git` with a one-off, read-only installation token for that one repository, and indexes the exact head it fetched. The code graph, questions, and change impact then work on it like on any other repository. The cache has no working tree, so applying, committing, and pushing a patch stay with local-path repositories.
+
+- **Signed state.** The install link carries a state (workspace, user, nonce, 10-minute expiry) that is accepted only for the same signed-in owner; the OAuth code returned by GitHub proves the installer can reach that installation, and the App's permissions are checked before anything is listed.
+- **Tokens never leak.** The App's private key stays on the server (`TRACERA_GITHUB_APP_PRIVATE_KEY_PATH`). The App JWT is used only for `/app` calls; installation tokens live in memory, go to git through its environment, and never appear in a URL, an argument, a log, or a file. GitHub endpoints are fixed constants and redirects are never followed.
+- **Webhooks are optional signals.** A push webhook (`POST /api/v1/webhooks/github`, `X-Hub-Signature-256` HMAC-SHA256 over the raw body, deduplicated by delivery GUID) or the Sync button queues one `repository.sync` job; a burst of pushes merges into one fetch and one index, and the worker also reconciles every five minutes. What is indexed is always the head the sync observed, not what a webhook claims.
+- **Not configured is not broken.** With any of the five variables unset, the GitHub panel names the unset variables, `GET /api/v1/github/status` reports `configured: false`, and everything else works.
+
+To register the App, open GitHub, Settings, Developer settings, GitHub Apps, New GitHub App: add the callback URLs `<web origin>/api/v1/github/callback` (for example `http://127.0.0.1:5173/api/v1/github/callback`), tick **Request user authorization (OAuth) during installation** and leave the Setup URL empty, give it Repository permissions **Contents: Read-only**, **Metadata: Read-only**, and **Pull requests: Read-only**, and leave the webhook inactive unless you have a public HTTPS URL. Then set `TRACERA_GITHUB_APP_ID`, `TRACERA_GITHUB_APP_PRIVATE_KEY_PATH` (the downloaded `.pem`), `TRACERA_GITHUB_WEBHOOK_SECRET` (16 to 256 characters), `TRACERA_GITHUB_CLIENT_ID`, and `TRACERA_GITHUB_CLIENT_SECRET`.
 
 ### Review and authorized actions
 
@@ -292,7 +306,7 @@ PostgreSQL holds workspaces, users, repositories, snapshots and the code graph, 
 | Capability | Hosted demo | Local install |
 |---|---|---|
 | Web workspace, email and password sign-in, Google sign-in | yes | yes |
-| Repositories and the versioned code graph | demo repositories | any local git repository |
+| Repositories and the versioned code graph | demo repositories (the GitHub App is not configured on the demo) | any local git repository, or a GitHub repository through the GitHub App |
 | Cited answers, feasibility, patch impact | yes | yes |
 | Bug reports, screenshot and recording understanding, SAM 3.1 | yes (live models) | yes |
 | Meetings: transcript upload and Google Meet import | upload; Meet import for accounts on the Google test-user list | yes |
@@ -346,6 +360,7 @@ About `npm run setup`:
 | `TRACERA_ENCRYPTION_KEY` | 32 random bytes, base64: encrypts OAuth tokens at rest |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Google Meet import |
 | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `TRACERA_GOOGLE_SIGNIN_NEW_USERS` | Continue with Google (`member` or `deny` for new users) |
+| `TRACERA_GITHUB_APP_ID`, `TRACERA_GITHUB_APP_PRIVATE_KEY_PATH`, `TRACERA_GITHUB_WEBHOOK_SECRET`, `TRACERA_GITHUB_CLIENT_ID`, `TRACERA_GITHUB_CLIENT_SECRET` | GitHub sync: all five must be set; the private key is a `.pem` file path on the server |
 | `TRACERA_TRUST_PROXY` | `true` behind a proxy such as Vercel |
 | `TRACERA_MAX_IMAGE_BYTES` | Largest screenshot or keyframe in bytes (default 8 MB) |
 

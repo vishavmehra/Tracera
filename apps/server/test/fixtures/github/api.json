@@ -1,0 +1,128 @@
+{
+	"_provenance": "Hand-built from GitHub's documented REST response shapes (trimmed), not recorded from a live installation. Re-record after the GitHub App is registered (B-01).",
+	"app": {
+		"id": 123456,
+		"slug": "tracera-test",
+		"node_id": "A_kwHOTEST",
+		"owner": { "login": "acme", "id": 1001, "type": "Organization" },
+		"name": "Tracera (test)",
+		"description": "Evidence-backed engineering intelligence",
+		"external_url": "https://tracera.example",
+		"html_url": "https://github.com/apps/tracera-test",
+		"created_at": "2026-10-20T10:00:00Z",
+		"updated_at": "2026-10-20T10:00:00Z",
+		"permissions": {
+			"contents": "read",
+			"metadata": "read",
+			"pull_requests": "read"
+		},
+		"events": ["pull_request", "push", "repository"],
+		"installations_count": 1
+	},
+	"installation": {
+		"id": 42,
+		"account": {
+			"login": "acme",
+			"id": 1001,
+			"type": "Organization",
+			"site_admin": false
+		},
+		"repository_selection": "selected",
+		"access_tokens_url": "https://api.github.com/app/installations/42/access_tokens",
+		"repositories_url": "https://api.github.com/installation/repositories",
+		"html_url": "https://github.com/organizations/acme/settings/installations/42",
+		"app_id": 123456,
+		"app_slug": "tracera-test",
+		"target_id": 1001,
+		"target_type": "Organization",
+		"permissions": {
+			"contents": "read",
+			"metadata": "read",
+			"pull_requests": "read"
+		},
+		"events": ["pull_request", "push", "repository"],
+		"created_at": "2026-10-25T09:00:00Z",
+		"updated_at": "2026-10-25T09:00:00Z",
+		"single_file_name": null,
+		"suspended_by": null,
+		"suspended_at": null
+	},
+	"access_token": {
+		"token": "ghs_TraceraTestOnlyNotARealToken000000000",
+		"expires_at": "2026-10-26T13:00:00Z",
+		"permissions": { "contents": "read", "metadata": "read" },
+		"repository_selection": "selected"
+	},
+	"installation_repositories": {
+		"total_count": 2,
+		"repository_selection": "selected",
+		"repositories": [
+			{
+				"id": 7,
+				"node_id": "R_kgDOTEST07",
+				"name": "shop",
+				"full_name": "acme/shop",
+				"private": true,
+				"owner": { "login": "acme", "id": 1001, "type": "Organization" },
+				"html_url": "https://github.com/acme/shop",
+				"description": "Storefront",
+				"default_branch": "main",
+				"size": 120,
+				"archived": false,
+				"disabled": false,
+				"visibility": "private"
+			},
+			{
+				"id": 8,
+				"node_id": "R_kgDOTEST08",
+				"name": "docs",
+				"full_name": "acme/docs",
+				"private": false,
+				"owner": { "login": "acme", "id": 1001, "type": "Organization" },
+				"html_url": "https://github.com/acme/docs",
+				"description": "Documentation",
+				"default_branch": "main",
+				"size": 40,
+				"archived": true,
+				"disabled": false,
+				"visibility": "public"
+			}
+		]
+	},
+	"user_installations": {
+		"total_count": 1,
+		"installations": [
+			{
+				"id": 42,
+				"account": { "login": "acme", "id": 1001, "type": "Organization" },
+				"app_id": 123456,
+				"app_slug": "tracera-test",
+				"repository_selection": "selected",
+				"permissions": {
+					"contents": "read",
+					"metadata": "read",
+					"pull_requests": "read"
+				},
+				"events": ["pull_request", "push", "repository"]
+			}
+		]
+	},
+	"oauth_token": {
+		"access_token": "ghu_TraceraTestOnlyUserToken0000000000000",
+		"expires_in": 28800,
+		"refresh_token": "ghr_TraceraTestOnlyRefresh00000000000000000000000000000000000000000000000000000000",
+		"refresh_token_expires_in": 15724800,
+		"token_type": "bearer",
+		"scope": ""
+	},
+	"git_ref": {
+		"ref": "refs/heads/main",
+		"node_id": "REF_kwDOTEST",
+		"url": "https://api.github.com/repos/acme/shop/git/refs/heads/main",
+		"object": {
+			"sha": "0000000000000000000000000000000000000000",
+			"type": "commit",
+			"url": "https://api.github.com/repos/acme/shop/git/commits/0000000000000000000000000000000000000000"
+		}
+	}
+}

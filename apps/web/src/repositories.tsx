@@ -7,6 +7,7 @@ import type { SnapshotStatus } from "@tracera/contracts";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError, getProfile, listRepositories } from "./api.ts";
+import { GitHubCard } from "./github.tsx";
 import { POLL_MS, useIsOwner } from "./hooks.ts";
 import type { Profile, Repository, RepositoryIndex } from "./schemas.ts";
 import {
@@ -337,6 +338,7 @@ export function RepositoriesPage() {
 					</Link>
 				)}
 			</div>
+			<GitHubCard />
 			<div className="mt-2">{content}</div>
 		</>
 	);

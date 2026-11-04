@@ -49,11 +49,18 @@ export type GitResult = {
  * Hardened git (argument array, never a shell). Untrusted values go after `-e`, `--`, or `--end-of-options`.
  * `userConfig` keeps the machine's system git configuration (for example a credential helper), which
  * a push needs to authenticate with the user's own credentials.
+ * `env` adds variables for this one command only, for example `GIT_CONFIG_*` carrying a credential
+ * header, which then never appears in argv (visible to other processes) or in any config file.
  */
 export function git(
 	cwd: string,
 	args: readonly string[],
-	options: { timeoutMs?: number; maxBytes?: number; userConfig?: boolean } = {},
+	options: {
+		timeoutMs?: number;
+		maxBytes?: number;
+		userConfig?: boolean;
+		env?: Record<string, string>;
+	} = {},
 ): Promise<GitResult> {
 	return new Promise((resolve) => {
 		execFile(
@@ -61,7 +68,7 @@ export function git(
 			[...HARDENING, ...args],
 			{
 				cwd,
-				env: gitEnv(options.userConfig),
+				env: { ...gitEnv(options.userConfig), ...options.env },
 				timeout: options.timeoutMs ?? 15_000,
 				windowsHide: true,
 				maxBuffer: options.maxBytes ?? 8 * 1024 * 1024,

@@ -47,6 +47,22 @@ export function mirrorPath(
 	return path.join(mirrorsRoot(config), `${snapshotId}.git`);
 }
 
+/**
+ * Bare caches of GitHub repositories: the "registered source" of a `git_url` repository. Only
+ * the sync job writes them (`git fetch` with a short-lived token); everything else clones from them.
+ */
+export const sourcesRoot = (config: Pick<Config, "dataDir">) =>
+	path.join(config.dataDir, "sources");
+
+export function sourceCachePath(
+	config: Pick<Config, "dataDir">,
+	repositoryId: string,
+): string {
+	if (!SAFE_SEGMENT.test(repositoryId))
+		throw new Error("Invalid source cache name");
+	return path.join(sourcesRoot(config), `${repositoryId}.git`);
+}
+
 export async function removeWorkspace(
 	config: Pick<Config, "dataDir">,
 	scope: string,

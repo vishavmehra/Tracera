@@ -248,5 +248,15 @@
     "group": "Platform",
     "drawio": "src/25-security-controls.drawio",
     "png": "png/25-security-controls.png"
+  },
+  {
+    "id": "26",
+    "file": "26-github-app-sync",
+    "title": "GitHub App sync",
+    "description": "GitHub App installation flow, signed state, installation tokens, push webhooks and the repository.sync job.",
+    "caption": "The owner installs the GitHub App and returns to Tracera with a signed state that is checked against the same signed-in owner and workspace. Repositories are connected one at a time. A connection, a push webhook, a reconciliation or the Sync button queues one repository.sync job that fetches into a bare cache with a short-lived installation token and indexes the exact commit it observed.",
+    "group": "Integrations",
+    "drawio": "src/26-github-app-sync.drawio",
+    "png": "png/26-github-app-sync.png"
   }
 ]

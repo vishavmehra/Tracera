@@ -1318,3 +1318,178 @@ export const authorizedActions = pgTable(
 		index().on(t.patchId, t.createdAt),
 	],
 );
+
+// ---- GitHub App connection and repository synchronization ---------------------------------------
+
+export const githubInstallationStatus = pgEnum("github_installation_status", [
+	"active",
+	"suspended",
+	"removed",
+]);
+
+/**
+ * A GitHub App installation, bound to exactly one workspace by the state-verified install callback
+ * (GitHub's installation ID is unique). Tokens are never stored: each use mints a short-lived one.
+ */
+export const githubInstallations = pgTable(
+	"github_installations",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		installationId: bigint({ mode: "number" }).notNull().unique(),
+		accountLogin: text().notNull(),
+		accountType: text().notNull(),
+		repositorySelection: text().$type<"all" | "selected">().notNull(),
+		permissions: jsonb().$type<Record<string, string>>().notNull(),
+		events: text().array().notNull().default(emptyTextArray),
+		status: githubInstallationStatus().notNull().default("active"),
+		suspendedAt: ts(),
+		removedAt: ts(),
+		createdBy: text()
+			.notNull()
+			.references(() => users.id),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [index().on(t.workspaceId)],
+);
+
+/** The GitHub side of a repository connected through an installation (`source_type = git_url`). */
+export const githubRepositories = pgTable(
+	"github_repositories",
+	{
+		repositoryId: text()
+			.primaryKey()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		installationId: text()
+			.notNull()
+			.references(() => githubInstallations.id, { onDelete: "cascade" }),
+		githubRepositoryId: bigint({ mode: "number" }).notNull(),
+		fullName: text().notNull(),
+		private: boolean().notNull(),
+		/** Set when the installation stops granting access to it (`installation_repositories` removed). */
+		accessRemovedAt: ts(),
+		createdBy: text()
+			.notNull()
+			.references(() => users.id),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [uniqueIndex().on(t.installationId, t.githubRepositoryId)],
+);
+
+export const webhookDeliveryStatus = pgEnum("webhook_delivery_status", [
+	"received",
+	"processed",
+	"ignored",
+	"failed",
+]);
+
+/**
+ * Every authenticated GitHub webhook delivery, deduplicated by GitHub's delivery GUID. Only a summary
+ * of the fields processing needs is kept: no commit messages, author emails, or user profiles.
+ */
+export const webhookDeliveries = pgTable(
+	"webhook_deliveries",
+	{
+		id: text().primaryKey(),
+		deliveryGuid: text().notNull().unique(),
+		event: text().notNull(),
+		action: text(),
+		installationId: bigint({ mode: "number" }),
+		/** Null when the installation is not connected to any workspace. */
+		workspaceId: text().references(() => workspaces.id, {
+			onDelete: "cascade",
+		}),
+		repositoryId: text().references(() => repositories.id, {
+			onDelete: "set null",
+		}),
+		status: webhookDeliveryStatus().notNull(),
+		reason: text(),
+		summary: jsonb().$type<Record<string, unknown>>().notNull(),
+		outcome: jsonb().$type<Record<string, unknown>>(),
+		error: jsonb().$type<ErrorInfo>(),
+		attempts: integer().notNull().default(1),
+		nextAttemptAt: ts(),
+		receivedAt: ts().notNull().defaultNow(),
+		processedAt: ts(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index().on(t.workspaceId, t.receivedAt),
+		index().on(t.repositoryId, t.receivedAt),
+		index().on(t.status, t.nextAttemptAt),
+	],
+);
+
+export const repositoryUpdateStatus = pgEnum("repository_update_status", [
+	"pending",
+	"syncing",
+	"indexing",
+	"indexed",
+	"failed",
+	"superseded",
+]);
+export const repositoryUpdateTrigger = pgEnum("repository_update_trigger", [
+	"connect",
+	"push",
+	"pull_request",
+	"reconcile",
+	"manual",
+	"default_branch",
+]);
+
+/**
+ * A request to bring one ref of a repository up to date (connection, webhook, reconciliation, manual
+ * sync). Triggers for a ref coalesce while one is pending. The sync job fetches (GitHub) or resolves
+ * (local) the ref's head and hands it to the indexing service, or to patch impact for pull requests.
+ */
+export const repositoryUpdates = pgTable(
+	"repository_updates",
+	{
+		id: text().primaryKey(),
+		workspaceId: text()
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		repositoryId: text()
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		trigger: repositoryUpdateTrigger().notNull(),
+		ref: text().notNull(),
+		/** The commit the trigger reported; null means "whatever the ref points to". */
+		targetSha: text(),
+		/** The commit actually indexed or analysed (the ref's head when the sync ran). */
+		indexedSha: text(),
+		status: repositoryUpdateStatus().notNull(),
+		snapshotId: text().references(() => repositorySnapshots.id, {
+			onDelete: "set null",
+		}),
+		patchAnalysisId: text().references(() => patchAnalyses.id, {
+			onDelete: "set null",
+		}),
+		pullRequest: jsonb().$type<{ number: number; base_ref: string }>(),
+		deliveryId: text().references(() => webhookDeliveries.id, {
+			onDelete: "set null",
+		}),
+		attempts: integer().notNull().default(0),
+		coalesced: integer().notNull().default(0),
+		error: jsonb().$type<ErrorInfo>(),
+		/** The user of a manual sync or connection; null for webhooks and reconciliation. */
+		requestedBy: text(),
+		startedAt: ts(),
+		finishedAt: ts(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		uniqueIndex("repository_updates_one_pending_per_ref")
+			.on(t.repositoryId, t.ref)
+			.where(sql`${t.status} = 'pending'`),
+		index().on(t.repositoryId, t.createdAt),
+	],
+);

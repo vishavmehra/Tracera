@@ -17,6 +17,7 @@ import { type SnapshotRow, toSnapshotView } from "./graph.ts";
 import { SYMBOL_KINDS } from "./graph-build.ts";
 import { EXTRACTOR_VERSION } from "./graph-extract.ts";
 import { getRepositoryRow } from "./repositories.ts";
+import { latestKnownCommit } from "./sync-status.ts";
 import { mirrorPath, readBlob } from "./workspace.ts";
 
 // Bounded, workspace-scoped reads over stored snapshots. Every traversal has a depth cap, a visited
@@ -273,14 +274,26 @@ export async function listSnapshots(
 /** Whether the snapshot still describes the ref it indexed (cheap rev-parse; no tree scan). */
 export async function snapshotFreshness(
 	config: Pick<Config, "dataDir" | "repoRoots" | "sourceRoot">,
-	repo: { sourceType: string; sourceRef: string },
+	repo: { id: string; sourceType: string; sourceRef: string },
 	snapshot: SnapshotRow,
+	/** With a database, GitHub repositories also count commits reported but not yet fetched. */
+	db?: Db,
 ) {
 	const reasons: string[] = [];
 	if (snapshot.extractorVersion !== EXTRACTOR_VERSION)
 		reasons.push("extractor_outdated");
 	const source = await verifySourcePath(config, repo).catch(() => null);
-	const current = source ? await resolveCommit(source, snapshot.ref) : null;
+	let current = source ? await resolveCommit(source, snapshot.ref) : null;
+	// Tracera's source cache of a GitHub repository can lag GitHub: a newer commit reported by a
+	// webhook or reconciliation that is still pending (or whose fetch failed) is the ref's known state.
+	const known =
+		db && repo.sourceType === "git_url"
+			? await latestKnownCommit(db, repo.id, snapshot.ref)
+			: null;
+	if (known && known.sha !== snapshot.commitSha) {
+		current = known.sha;
+		reasons.push(known.reason);
+	}
 	if (current === null) reasons.push("source_unavailable");
 	else if (current !== snapshot.commitSha) reasons.push("ref_moved");
 	return {
@@ -315,7 +328,7 @@ export async function getRepositoryProfile(
 		snapshot: toSnapshotView(snapshot),
 		profile: snapshot.profile,
 		coverage: snapshot.coverage,
-		freshness: await snapshotFreshness(deps.config, repo, snapshot),
+		freshness: await snapshotFreshness(deps.config, repo, snapshot, deps.db),
 		latest_snapshot:
 			latest && latest.id !== snapshot.id ? toSnapshotView(latest) : null,
 	};

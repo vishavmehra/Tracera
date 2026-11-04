@@ -119,6 +119,7 @@ import {
 } from "../modules/results.ts";
 import { type AppDeps, authOf } from "./app.ts";
 import { registerCapabilitiesRoutes } from "./capabilities-routes.ts";
+import { registerGitHubRoutes } from "./github-routes.ts";
 import { registerGoogleAuthRoutes } from "./google-auth-routes.ts";
 import { registerMcpGuards } from "./mcp.ts";
 import { registerMeetingRoutes } from "./meeting-routes.ts";
@@ -172,6 +173,8 @@ export function registerRoutes(app: FastifyInstance, deps: AppDeps) {
 			throw new AppError(404, "not_found", `${label} ${id} was not found`);
 		return id;
 	};
+
+	registerGitHubRoutes(app, deps); // GitHub App, webhooks, repository sync
 
 	app.get("/healthz", async () => ({ status: "ok" }));
 

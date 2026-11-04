@@ -202,6 +202,23 @@ const EnvSchema = z
 		),
 		/** Segmentation model used to locate a named UI element in a screenshot; only Meta hosts one. */
 		TRACERA_MODEL_SEGMENT: opt(z.string().max(200).default("sam-3.1")),
+		// ---- GitHub App. All five or none; absent = "not configured". ----
+		TRACERA_GITHUB_APP_ID: opt(
+			z
+				.string()
+				.regex(/^[0-9]{1,12}$/, "The numeric App ID")
+				.optional(),
+		),
+		TRACERA_GITHUB_APP_PRIVATE_KEY_PATH: opt(z.string().max(1000).optional()),
+		TRACERA_GITHUB_WEBHOOK_SECRET: opt(z.string().min(16).max(256).optional()),
+		TRACERA_GITHUB_CLIENT_ID: opt(
+			z
+				.string()
+				.regex(/^[A-Za-z0-9._-]{1,100}$/)
+				.optional(),
+		),
+		TRACERA_GITHUB_CLIENT_SECRET: opt(z.string().min(16).max(256).optional()),
+		// ---- end GitHub App ----
 	})
 	.superRefine((env, ctx) => {
 		const require = (key: keyof typeof env, reason: string) => {
@@ -227,6 +244,15 @@ const EnvSchema = z
 			});
 		}
 	});
+
+/** The GitHub App's variables. The integration is configured only when all are set; a partial set is reported as not configured, with the unset names, never as a startup failure. */
+export const GITHUB_VARIABLES = [
+	"TRACERA_GITHUB_APP_ID",
+	"TRACERA_GITHUB_APP_PRIVATE_KEY_PATH",
+	"TRACERA_GITHUB_WEBHOOK_SECRET",
+	"TRACERA_GITHUB_CLIENT_ID",
+	"TRACERA_GITHUB_CLIENT_SECRET",
+] as const;
 
 /** TRACERA_DATA_DIR or ~/.tracera. Shared with scripts that need the data directory without a database. */
 export const resolveDataDir = (env: {
@@ -295,6 +321,16 @@ export type Config = {
 		egressNetwork: string;
 	};
 	meetings: MeetingsConfig;
+	/** The GitHub App; null = not configured, and every GitHub endpoint says so. */
+	github: {
+		appId: string;
+		privateKeyPath: string;
+		webhookSecret: string;
+		clientId: string;
+		clientSecret: string;
+	} | null;
+	/** Names (never values) of the unset GitHub App variables; empty when configured. */
+	githubMissing: string[];
 };
 
 export function loadConfig(
@@ -405,6 +441,21 @@ export function loadConfig(
 			egressNetwork: e.TRACERA_DEPS_EGRESS_NETWORK,
 		},
 		meetings: loadMeetingsConfig(env, reasoningModel),
+		github:
+			e.TRACERA_GITHUB_APP_ID &&
+			e.TRACERA_GITHUB_APP_PRIVATE_KEY_PATH &&
+			e.TRACERA_GITHUB_WEBHOOK_SECRET &&
+			e.TRACERA_GITHUB_CLIENT_ID &&
+			e.TRACERA_GITHUB_CLIENT_SECRET
+				? {
+						appId: e.TRACERA_GITHUB_APP_ID,
+						privateKeyPath: e.TRACERA_GITHUB_APP_PRIVATE_KEY_PATH,
+						webhookSecret: e.TRACERA_GITHUB_WEBHOOK_SECRET,
+						clientId: e.TRACERA_GITHUB_CLIENT_ID,
+						clientSecret: e.TRACERA_GITHUB_CLIENT_SECRET,
+					}
+				: null,
+		githubMissing: GITHUB_VARIABLES.filter((key) => !e[key]),
 	};
 }
 
@@ -432,6 +483,7 @@ export function describeConfig(config: Config) {
 		sandboxMode: config.sandboxMode,
 		sandboxImage: config.sandboxImage,
 		dependencyRegistry: new URL(config.dependencies.registry).origin,
+		github: config.github ? "configured" : "not_configured",
 	};
 }
 

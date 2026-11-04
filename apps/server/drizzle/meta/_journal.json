@@ -71,6 +71,13 @@
       "when": 1793301074861,
       "tag": "0009_sad_jasper_sitwell",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793780772664,
+      "tag": "0010_github_sync",
+      "breakpoints": true
     }
   ]
 }

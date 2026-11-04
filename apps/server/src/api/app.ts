@@ -7,6 +7,7 @@ import type { Config } from "../config.ts";
 import type { Db } from "../db/client.ts";
 import { AppError, problemBody } from "../lib/http.ts";
 import { type AuthContext, authenticateRequest } from "../modules/auth.ts";
+import type { GitHubClient } from "../modules/github-app.ts";
 import { evidenceRoutes } from "./evidence-routes.ts";
 import { registerRoutes } from "./routes.ts";
 
@@ -22,6 +23,8 @@ export type AppDeps = {
 	pool: pg.Pool;
 	db: Db;
 	boss: PgBoss;
+	/** GitHub HTTP client and remote; tests inject recorded responses. Default: the real one. */
+	github?: GitHubClient;
 	/** Where the request log is written instead of standard output; tests read it to check nothing sensitive is printed. */
 	logStream?: NodeJS.WritableStream;
 };
@@ -85,6 +88,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 			!request.routeOptions.url?.startsWith("/api/v1/")
 		)
 			return;
+		// GitHub webhooks carry no session or token: the handler verifies their HMAC signature.
+		if (request.routeOptions.url === "/api/v1/webhooks/github") return;
 		const isSignIn = SIGN_IN_ROUTES.has(request.routeOptions.url ?? "");
 		if (!isSignIn) {
 			request.auth = await authenticateRequest(deps.db, {

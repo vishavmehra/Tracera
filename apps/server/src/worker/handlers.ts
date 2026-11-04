@@ -17,6 +17,8 @@ import {
 	recoverLostDependencySnapshots,
 	runDependencySnapshotJob,
 } from "../modules/dependencies.ts";
+import { deliveryMaintenance } from "../modules/github.ts";
+import type { GitHubClient } from "../modules/github-app.ts";
 import { recoverLostIndexJobs, runIndexJob } from "../modules/graph.ts";
 import {
 	recoverStaleSteps,
@@ -28,6 +30,11 @@ import {
 	recoverLostPatchAnalyses,
 	runPatchImpactJob,
 } from "../modules/patch-analysis.ts";
+import {
+	runReconcileJob,
+	runSyncJob,
+	syncMaintenance,
+} from "../modules/sync.ts";
 import { observeEvidenceAsset } from "../modules/visual-evidence.ts";
 import { locateInEvidence } from "../modules/visual-locate.ts";
 import { processRecording } from "../modules/visual-recording.ts";
@@ -43,6 +50,7 @@ import {
 	QUEUES,
 	type RecordingJob,
 	type StageJob,
+	type SyncJob,
 } from "../queue.ts";
 import { createDockerExecutor } from "../sandbox/docker.ts";
 import {
@@ -59,6 +67,8 @@ export type WorkerDeps = {
 	executor: SandboxExecutor;
 	workerId: string;
 	log?: (message: string, fields: Record<string, unknown>) => void;
+	/** GitHub HTTP client and remote; tests inject recorded responses. Default: the real one. */
+	github?: GitHubClient;
 };
 
 /** The configured provider only; there is no silent fallback to mock or to another provider. */
@@ -203,12 +213,15 @@ export async function maintenance(deps: WorkerDeps): Promise<{
 	let reaped = await deps.executor.reap({
 		liveWorkerIds: live.map((worker) => worker.id),
 	});
+	// Repository synchronization: retry stuck updates and failed webhook deliveries.
+	const synced =
+		(await syncMaintenance(deps)) + (await deliveryMaintenance(deps));
 	// Dependency artifacts are large: retention runs at most every ten minutes.
 	if (Date.now() - lastRetention > RETENTION_INTERVAL_MS) {
 		lastRetention = Date.now();
 		reaped += await cleanupDependencyArtifacts(deps);
 	}
-	return { recovered, reaped };
+	return { recovered: recovered + synced, reaped };
 }
 
 /** Starts the queue handlers, heartbeat, and maintenance loop. Returns a stop function. */
@@ -283,6 +296,17 @@ export async function startWorker(
 			if (job) await handleLocateJob(deps, job.data);
 		},
 	);
+	// Repository synchronization: one job per update, plus the throttled reconciliation.
+	await deps.boss.work<SyncJob>(
+		QUEUES.sync,
+		{ batchSize: 1 },
+		async ([job]) => {
+			if (job) await runSyncJob(deps, job.data.updateId);
+		},
+	);
+	await deps.boss.work(QUEUES.reconcile, { batchSize: 1 }, async ([job]) => {
+		if (job) await runReconcileJob(deps);
+	});
 	await deps.boss.work<RecordingJob>(
 		QUEUES.recording,
 		{ batchSize: 1 },

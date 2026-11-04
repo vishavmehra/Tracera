@@ -7,11 +7,19 @@ import { newId } from "../src/lib/ids.ts";
 // actually registered, so a new route fails them until its rule is written down here.
 
 /**
- * `public`: no credentials. `login`: none, but the CSRF header and origin. `any`: any valid session
- * or token. `session`: a signed-in user, never a token. `owner`: an owner's session. A scope: a
- * session, or a token holding that scope.
+ * `public`: no credentials. `login`: none, but the CSRF header and origin. `signed`: no session or
+ * token and no CSRF header: the request is authenticated by an HMAC signature over its raw body.
+ * `any`: any valid session or token. `session`: a signed-in user, never a token. `owner`: an owner's
+ * session. A scope: a session, or a token holding that scope.
  */
-export type Access = "public" | "login" | "any" | "session" | "owner" | Scope;
+export type Access =
+	| "public"
+	| "login"
+	| "signed"
+	| "any"
+	| "session"
+	| "owner"
+	| Scope;
 export type Method = "GET" | "POST" | "PATCH" | "DELETE";
 export type RouteRule = { method: Method; path: string; access: Access };
 
@@ -29,6 +37,7 @@ export const ROUTE_RULES: RouteRule[] = [
 		"GET /api/v1/auth/providers",
 	),
 	...rules("login", "POST /api/v1/auth/login", "POST /api/v1/auth/google"),
+	...rules("signed", "POST /api/v1/webhooks/github"),
 	...rules("any", "GET /api/v1/auth/me", "GET /api/v1/capabilities"),
 	...rules(
 		"session",
@@ -58,9 +67,16 @@ export const ROUTE_RULES: RouteRule[] = [
 		"PATCH /api/v1/repositories/:id",
 		"DELETE /api/v1/repositories/:id",
 		"POST /api/v1/patches/:id/actions",
+		"GET /api/v1/github/install",
+		"GET /api/v1/github/callback",
+		"GET /api/v1/github/installations/:id/repositories",
+		"POST /api/v1/github/installations/:id/repositories",
 	),
 	...rules(
 		"repositories:read",
+		"GET /api/v1/github/status",
+		"GET /api/v1/github/installations",
+		"GET /api/v1/repositories/:id/sync",
 		"GET /api/v1/repositories",
 		"GET /api/v1/repositories/:id",
 		"GET /api/v1/repositories/:id/snapshots",
@@ -84,6 +100,7 @@ export const ROUTE_RULES: RouteRule[] = [
 	...rules(
 		"investigations:write",
 		"POST /api/v1/repositories/:id/index",
+		"POST /api/v1/repositories/:id/sync",
 		"POST /api/v1/snapshots/:id/cancel",
 		"POST /api/v1/repositories/:id/assessments",
 		"POST /api/v1/repositories/:id/questions",
@@ -171,6 +188,7 @@ export function registeredRoutes(app: FastifyInstance): string[] {
 /** The ID prefix of each collection a route addresses by `:id`. */
 export const COLLECTION_PREFIX: Record<string, IdPrefix> = {
 	repositories: "repo",
+	installations: "ghi",
 	snapshots: "snap",
 	nodes: "gnd",
 	assessments: "asm",

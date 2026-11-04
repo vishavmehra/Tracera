@@ -968,7 +968,12 @@ export async function runAssessJob(
 			.where(eq(repositories.id, row.repositoryId))
 			.limit(1);
 		if (!repo) return;
-		const freshness = await snapshotFreshness(deps.config, repo, snapshot);
+		const freshness = await snapshotFreshness(
+			deps.config,
+			repo,
+			snapshot,
+			deps.db,
+		);
 		const coverageComplete = snapshot.coverage?.complete === true;
 		const question = row.kind === "question";
 		const [parent] =

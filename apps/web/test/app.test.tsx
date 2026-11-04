@@ -167,6 +167,18 @@ describe("repository overview", () => {
 		stubApi({
 			[ME]: json(session()),
 			[LIST]: problem(500, "internal_error", "An unexpected error occurred"),
+			// The GitHub panel on the same page is quiet, so the only retry is the list's own.
+			"GET /api/v1/github/status": json({
+				configured: false,
+				missing: ["TRACERA_GITHUB_APP_ID"],
+				webhook_path: "/api/v1/webhooks/github",
+				callback_path: "/api/v1/github/callback",
+				required_permissions: {},
+				events: [],
+				app: null,
+				app_error: null,
+				installations: [],
+			}),
 		});
 		renderApp("/");
 		const notice = (await screen.findByText("Repositories could not be loaded"))
