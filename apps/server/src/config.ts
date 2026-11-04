@@ -18,6 +18,24 @@ const bool = (fallback: boolean) =>
 const int = (fallback: number, min: number, max: number) =>
 	opt(z.coerce.number().int().min(min).max(max).default(fallback));
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+/** A project address is https; plain http is accepted for a loopback host only, so tests can stand in for the project. */
+const isSupabaseUrl = (value: string) => {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "https:" ||
+				(url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))) &&
+			!url.username &&
+			!url.password &&
+			!url.search &&
+			!url.hash
+		);
+	} catch {
+		return false;
+	}
+};
+
 /** The pinned Node sandbox image, by digest. Update with `npm run sandbox:pull`. */
 export const DEFAULT_SANDBOX_IMAGE =
 	"node@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205";
@@ -51,6 +69,30 @@ const EnvSchema = z
 		TRACERA_API_PORT: int(8787, 1, 65_535),
 		TRACERA_PUBLIC_URL: opt(
 			z.url({ protocol: /^https?$/ }).default("http://127.0.0.1:8787"),
+		),
+		/** The Supabase Auth project that signs users in with Google; both values are needed to turn it on. */
+		SUPABASE_URL: opt(
+			z
+				.string()
+				.refine(
+					isSupabaseUrl,
+					"Use an https URL (http only for localhost) without credentials, query, or fragment",
+				)
+				.optional(),
+		),
+		SUPABASE_PUBLISHABLE_KEY: opt(
+			z
+				.string()
+				.trim()
+				.regex(
+					/^[\x21-\x7e]{1,500}$/,
+					"Use the publishable key exactly as the project's API settings show it",
+				)
+				.optional(),
+		),
+		/** What a first Google sign-in does for an email that has no Tracera user. */
+		TRACERA_GOOGLE_SIGNIN_NEW_USERS: opt(
+			z.enum(["member", "deny"]).default("member"),
 		),
 		/** `hosted` is a shared demo with no sandbox and no user working tree; `local` is the developer's machine. */
 		TRACERA_ENVIRONMENT: opt(z.enum(["hosted", "local"]).default("local")),
@@ -208,6 +250,12 @@ export type Config = {
 		publicOrigin: string;
 		trustProxy: boolean;
 	};
+	/** Ways to sign in besides the password. */
+	signIn: {
+		/** The Supabase Auth project behind "Continue with Google"; null unless both of its variables are set. */
+		supabase: { url: string; publishableKey: string } | null;
+		newUsers: "member" | "deny";
+	};
 	databaseUrl: string;
 	autoMigrate: boolean;
 	dataDir: string;
@@ -280,6 +328,16 @@ export function loadConfig(
 			publicUrl: e.TRACERA_PUBLIC_URL,
 			publicOrigin: new URL(e.TRACERA_PUBLIC_URL).origin,
 			trustProxy: e.TRACERA_TRUST_PROXY,
+		},
+		signIn: {
+			supabase:
+				e.SUPABASE_URL && e.SUPABASE_PUBLISHABLE_KEY
+					? {
+							url: new URL(e.SUPABASE_URL).href.replace(/\/+$/, ""),
+							publishableKey: e.SUPABASE_PUBLISHABLE_KEY,
+						}
+					: null,
+			newUsers: e.TRACERA_GOOGLE_SIGNIN_NEW_USERS,
 		},
 		databaseUrl: e.DATABASE_URL,
 		autoMigrate: e.TRACERA_AUTO_MIGRATE,
@@ -356,6 +414,7 @@ export function describeConfig(config: Config) {
 		env: config.env,
 		environment: config.environment,
 		api: `${config.api.host}:${config.api.port}`,
+		googleSignIn: config.signIn.supabase ? config.signIn.newUsers : "off",
 		database: new URL(config.databaseUrl).host,
 		dataDir: config.dataDir,
 		repoRoots: config.repoRoots.length,

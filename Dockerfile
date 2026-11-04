@@ -16,7 +16,7 @@ RUN npm ci --omit=dev --ignore-scripts --workspace @tracera/server --workspace @
 
 COPY apps/server apps/server
 COPY packages/contracts packages/contracts
-COPY scripts/start.ts scripts/preflight.ts scripts/bench-setup.ts scripts/
+COPY scripts/start.ts scripts/preflight.ts scripts/bootstrap.ts scripts/bench-setup.ts scripts/shop-ui-setup.ts scripts/
 # Demo repositories (TRACERA_DEMO_REPOS): the fixture sources and the manifest that builds their history.
 COPY fixtures fixtures
 COPY eval/bench-shop/manifest.json eval/bench-shop/manifest.json

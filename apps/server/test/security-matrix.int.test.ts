@@ -67,6 +67,7 @@ const LOGOUT = "POST /api/v1/auth/logout";
 /** Valid request bodies, so a refusal is never a validation error in disguise. */
 const BODY: Record<string, unknown> = {
 	"POST /api/v1/auth/login": { email: "owner@example.com", password: PASSWORD },
+	"POST /api/v1/auth/google": { access_token: "header.payload.signature" },
 	"POST /api/v1/tokens": {
 		name: "matrix",
 		client_kind: "script",

@@ -6,6 +6,7 @@ export * from "./capabilities.ts";
 export * from "./common.ts";
 export * from "./dependencies.ts";
 export * from "./evidence.ts";
+export * from "./google-auth.ts";
 export * from "./graph.ts";
 export * from "./investigations.ts";
 export * from "./meetings.ts";

@@ -2,6 +2,7 @@ import {
 	type ActionRequest,
 	type ApprovalRequest,
 	type AskQuestionRequest,
+	AuthProvidersResponseSchema,
 	CapabilitiesResponseSchema,
 	type ChangeImpactRequest,
 	type ConfirmMeetingCandidateRequest,
@@ -11,6 +12,7 @@ import {
 	type CreateRepositoryRequest,
 	EvidenceLocationsResponseSchema,
 	EvidenceObservationsResponseSchema,
+	type GoogleSignInRequest,
 	type ImportMeetingRequest,
 	type LoginRequest,
 	MeetingSegmentPageSchema,
@@ -195,6 +197,15 @@ const repositoryPath = (id: string) => `/api/v1/repositories/${enc(id)}`;
 // ---- Auth ----
 export const signIn = (input: LoginRequest) =>
 	request("/api/v1/auth/login", SignInResponseSchema, {
+		method: "POST",
+		body: input,
+	});
+/** Which other ways of signing in the server offers; public, so it answers before any session exists. */
+export const getAuthProviders = () =>
+	request("/api/v1/auth/providers", AuthProvidersResponseSchema);
+/** Trades the provider's access token for the same session cookie the password sign-in gives. */
+export const signInWithGoogle = (input: GoogleSignInRequest) =>
+	request("/api/v1/auth/google", SignInResponseSchema, {
 		method: "POST",
 		body: input,
 	});

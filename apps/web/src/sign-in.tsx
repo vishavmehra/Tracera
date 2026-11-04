@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError, signIn } from "./api.ts";
+import { GoogleSignInButton } from "./google-sign-in.tsx";
 import {
 	ErrorNotice,
 	inputClass,
@@ -199,6 +200,7 @@ export function SignInPage() {
 							{signInMutation.isPending ? "Signing in…" : "Sign in"}
 						</button>
 					</form>
+					<GoogleSignInButton />
 				</div>
 			</main>
 			<aside

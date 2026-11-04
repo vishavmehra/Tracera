@@ -4,8 +4,9 @@
 //
 // The boot order favors the API, because a request is what wakes an idle instance: wait for the
 // database, start the API (which applies migrations), and only then start the worker, create the
-// owner account if it is missing, and build the demo repository if it is missing. Those three run
-// at low priority so a request that arrives meanwhile is not starved on a small CPU share.
+// owner account if it is missing, and bring the demo back (repositories, judge account, indexing).
+// Those three run at low priority so a request that arrives meanwhile is not starved on a small CPU
+// share.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 
@@ -99,10 +100,11 @@ if (await apiReady()) {
 	launch("apps/server/src/main-worker.ts", { background: true });
 	if (ownerMissing)
 		launch("apps/server/src/db/seed.ts", { once: true, background: true });
-	if (enabled("TRACERA_DEMO_REPOS"))
-		launch("scripts/bench-setup.ts", {
-			args: ["--if-absent"],
-			once: true,
-			background: true,
-		});
+	// The bootstrap builds the demo repositories, creates the judge account, and registers and
+	// indexes the demo repositories as the owner. It exits zero whatever goes wrong in it.
+	if (
+		enabled("TRACERA_DEMO_REPOS") ||
+		(process.env.TRACERA_JUDGE_EMAIL && process.env.TRACERA_JUDGE_PASSWORD)
+	)
+		launch("scripts/bootstrap.ts", { once: true, background: true });
 }

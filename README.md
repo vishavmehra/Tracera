@@ -51,7 +51,7 @@ npm run setup     # checks the prerequisites, creates .env, starts PostgreSQL, a
 npm run local     # starts the API, the worker, and the web app
 ```
 
-Open <http://127.0.0.1:5173> and sign in. The owner's email is `TRACERA_SEED_OWNER_EMAIL` and its password is `TRACERA_SEED_OWNER_PASSWORD`, both in `.env`. Until you configure a model provider (see Models) the models are the deterministic mock, and every mock result is labelled.
+Open <http://127.0.0.1:5173> and sign in. The owner's email is `TRACERA_SEED_OWNER_EMAIL` and its password is `TRACERA_SEED_OWNER_PASSWORD`, both in `.env`. Setting `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` adds "Continue with Google" to the sign-in page (setup in `docs/ENVIRONMENT.md`, Sign-in). Until you configure a model provider (see Models) the models are the deterministic mock, and every mock result is labelled.
 
 **Open the app at `127.0.0.1`, not `localhost`.** The API accepts a change only when the browser's origin equals `TRACERA_PUBLIC_URL`. `npm run local` sets that to `http://127.0.0.1:<TRACERA_WEB_PORT>`, the web app's address; the web app forwards `/api` to the API, so the browser talks to that one address only. Any other spelling (`localhost`, a LAN address) makes sign-in and every save fail.
 
@@ -194,7 +194,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 
 The repository contains what is needed to host Tracera as well as the local setup above:
 
-- `Dockerfile` builds one image that runs the API and the worker together (`scripts/start.ts`), because both use the same data directory. It waits for the database, starts the API (which applies migrations) and then the worker, can create the first owner from `TRACERA_SEED_OWNER_EMAIL` and `TRACERA_SEED_OWNER_PASSWORD`, and can build the Bench Shop demo repository (`TRACERA_DEMO_REPOS=true`) when it is missing.
+- `Dockerfile` builds one image that runs the API and the worker together (`scripts/start.ts`), because both use the same data directory. It waits for the database, starts the API (which applies migrations) and then the worker, can create the first owner from `TRACERA_SEED_OWNER_EMAIL` and `TRACERA_SEED_OWNER_PASSWORD`, and with `TRACERA_DEMO_REPOS=true` rebuilds the two demo repositories on every boot, registers them when missing, and requests their indexing (a free instance loses its storage whenever it sleeps). `TRACERA_JUDGE_EMAIL` and `TRACERA_JUDGE_PASSWORD` add a shared judge login, a workspace member.
 - `render.yaml` is a Render Blueprint for that image on free plans: one web service, which has no disk (its data directory is temporary) and sleeps after 15 minutes without traffic, plus its own Postgres, which expires after 30 days. A paid instance with a disk is the upgrade path. The container has no Docker, so `TRACERA_SANDBOX_MODE=disabled`: investigations run analysis only and the sandbox stages are recorded as blocked.
 - `vercel.json` builds the web app and proxies `/api/*`, `/healthz`, and `/readyz` to the API, so the browser sees a single origin. Cookies, the CSRF check, and OAuth callbacks depend on that; set `TRACERA_PUBLIC_URL` to the web app's origin and `TRACERA_TRUST_PROXY=true` behind the proxy.
 

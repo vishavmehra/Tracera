@@ -22,8 +22,13 @@ const rules = (access: Access, ...routes: `${Method} /${string}`[]) =>
 	});
 
 export const ROUTE_RULES: RouteRule[] = [
-	...rules("public", "GET /healthz", "GET /readyz"),
-	...rules("login", "POST /api/v1/auth/login"),
+	...rules(
+		"public",
+		"GET /healthz",
+		"GET /readyz",
+		"GET /api/v1/auth/providers",
+	),
+	...rules("login", "POST /api/v1/auth/login", "POST /api/v1/auth/google"),
 	...rules("any", "GET /api/v1/auth/me", "GET /api/v1/capabilities"),
 	...rules(
 		"session",

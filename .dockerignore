@@ -30,3 +30,4 @@ apps/extension
 apps/mcp
 apps/*/test
 packages/*/test
+fixtures/shop-ui/demo

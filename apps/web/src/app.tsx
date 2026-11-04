@@ -24,6 +24,7 @@ import {
 } from "./api.ts";
 import { EnvironmentChip } from "./capabilities.tsx";
 import { ExplorePage, NodePage } from "./explore.tsx";
+import { AuthCallbackPage } from "./google-sign-in.tsx";
 import { ImpactPage, PatchAnalysisPage } from "./impact.tsx";
 import {
 	InvestigationPage,
@@ -59,6 +60,24 @@ const retryTransient = (failures: number, error: unknown) =>
 	error instanceof ApiError &&
 	(error.status === 0 || error.status >= 500);
 
+/**
+ * The free-tier API sleeps, and its edge turns away Vercel's proxy (HTTP 429 or 5xx without problem
+ * details) before the API wakes, so the browser pings it directly. Set only where the API is remote.
+ */
+const WAKE_URL = import.meta.env.VITE_WAKE_URL as string | undefined;
+let wakeSentAt = 0;
+const wakeApi = () => {
+	if (!WAKE_URL || Date.now() - wakeSentAt < 20_000) return;
+	wakeSentAt = Date.now();
+	void fetch(WAKE_URL, { mode: "no-cors", cache: "no-store" }).catch(
+		() => undefined,
+	);
+};
+const isWaking = (error: unknown) =>
+	error instanceof ApiError &&
+	error.problem === null &&
+	[0, 429, 502, 503, 504].includes(error.status);
+
 /** Any 401 means the session ended: go to sign-in, then come back to the same page. */
 export function createQueryClient(
 	router: Pick<DataRouter, "navigate" | "state">,
@@ -78,8 +97,19 @@ export function createQueryClient(
 function RequireSession() {
 	const session = useQuery({
 		queryKey: ["session"],
-		queryFn: getSession,
+		queryFn: async () => {
+			try {
+				return await getSession();
+			} catch (error) {
+				if (isWaking(error)) wakeApi();
+				throw error;
+			}
+		},
 		staleTime: 5 * 60_000,
+		retry: (failures, error) =>
+			isWaking(error) ? failures < 20 : retryTransient(failures, error),
+		retryDelay: (failures, error) =>
+			isWaking(error) ? 4_000 : Math.min(1_000 * 2 ** failures, 30_000),
 	});
 	if (session.error) {
 		// The query client's 401 handler is already navigating to sign-in.
@@ -95,7 +125,14 @@ function RequireSession() {
 			</main>
 		);
 	}
-	if (!session.data) return <PageStatus>Checking your session…</PageStatus>;
+	if (!session.data)
+		return (
+			<PageStatus>
+				{session.failureCount > 0
+					? "Waking the hosted server (free tier, up to a minute)…"
+					: "Checking your session…"}
+			</PageStatus>
+		);
 	return <Shell session={session.data} />;
 }
 
@@ -398,6 +435,11 @@ function NotFound() {
 
 export const routes: RouteObject[] = [
 	{ path: "/sign-in", element: <SignInPage />, errorElement: <RouteError /> },
+	{
+		path: "/auth/callback",
+		element: <AuthCallbackPage />,
+		errorElement: <RouteError />,
+	},
 	{
 		element: <RequireSession />,
 		errorElement: <RouteError />,

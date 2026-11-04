@@ -22,7 +22,16 @@ export type AppDeps = {
 	pool: pg.Pool;
 	db: Db;
 	boss: PgBoss;
+	/** Where the request log is written instead of standard output; tests read it to check nothing sensitive is printed. */
+	logStream?: NodeJS.WritableStream;
 };
+
+/** Routes used before a session exists: no authentication, but changes still need the CSRF header and origin. */
+const SIGN_IN_ROUTES = new Set([
+	"/api/v1/auth/login",
+	"/api/v1/auth/google",
+	"/api/v1/auth/providers",
+]);
 
 export function authOf(request: FastifyRequest): AuthContext {
 	if (!request.auth)
@@ -43,6 +52,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 				? false
 				: {
 						level: config.logLevel,
+						...(deps.logStream ? { stream: deps.logStream } : {}),
 						redact: {
 							paths: [
 								"req.headers.authorization",
@@ -75,8 +85,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 			!request.routeOptions.url?.startsWith("/api/v1/")
 		)
 			return;
-		const isLogin = request.routeOptions.url === "/api/v1/auth/login";
-		if (!isLogin) {
+		const isSignIn = SIGN_IN_ROUTES.has(request.routeOptions.url ?? "");
+		if (!isSignIn) {
 			request.auth = await authenticateRequest(deps.db, {
 				authorization: request.headers.authorization,
 				cookie: request.headers.cookie,
@@ -90,7 +100,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 		}
 		const mutating = !["GET", "HEAD", "OPTIONS"].includes(request.method);
 		// Cookies are ambient credentials: require a custom header and same-origin for mutations.
-		if (mutating && (isLogin || request.auth?.kind === "session")) {
+		if (mutating && (isSignIn || request.auth?.kind === "session")) {
 			if (
 				request.headers["x-tracera-csrf"] !== "1" ||
 				request.headers.origin !== config.api.publicOrigin

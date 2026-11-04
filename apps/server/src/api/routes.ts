@@ -119,6 +119,7 @@ import {
 } from "../modules/results.ts";
 import { type AppDeps, authOf } from "./app.ts";
 import { registerCapabilitiesRoutes } from "./capabilities-routes.ts";
+import { registerGoogleAuthRoutes } from "./google-auth-routes.ts";
 import { registerMcpGuards } from "./mcp.ts";
 import { registerMeetingRoutes } from "./meeting-routes.ts";
 import { registerPublicationRoutes } from "./publication-routes.ts";
@@ -982,6 +983,10 @@ export function registerRoutes(app: FastifyInstance, deps: AppDeps) {
 		};
 	});
 
+	registerGoogleAuthRoutes(app, deps, {
+		failedLogins: failedLoginsByIp,
+		secureCookie,
+	});
 	registerMeetingRoutes(app, deps); // meetings and meeting integrations
 	registerPublicationRoutes(app, deps);
 	registerVisualRoutes(app, deps);

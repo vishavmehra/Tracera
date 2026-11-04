@@ -61,8 +61,8 @@ services:
         value: /tmp/tracera
       - key: TRACERA_REPO_ROOTS
         value: /tmp/repos
-      # Builds the Bench Shop fixture on every boot (when missing) so it can be registered from the
-      # web app.
+      # Builds the two demo repositories on every boot (the storage is erased on every wake), then
+      # registers them if they are missing and requests their indexing, as the owner.
       - key: TRACERA_DEMO_REPOS
         value: "true"
       # Password hashing takes 128 MiB per login and runs on this thread pool. Two at a time keep
@@ -87,6 +87,12 @@ services:
         sync: false
       - key: TRACERA_SEED_OWNER_PASSWORD
         sync: false
+      # The shared login for judges: a member of the default workspace, created when both are set.
+      # An existing account is never modified. The password needs at least 12 characters.
+      - key: TRACERA_JUDGE_EMAIL
+        sync: false
+      - key: TRACERA_JUDGE_PASSWORD
+        sync: false
       - key: TRACERA_ENCRYPTION_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -95,4 +101,10 @@ services:
         sync: false
       # The web origin followed by the callback path, because the proxy forwards it to this service.
       - key: GOOGLE_REDIRECT_URI
+        sync: false
+      # "Continue with Google" on the sign-in page, through a Supabase Auth project. Both are needed
+      # for the button to appear; the key is the project's publishable key.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
         sync: false

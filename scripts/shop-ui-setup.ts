@@ -64,7 +64,11 @@ export function setupShopUi(target: string): {
 			);
 		rmSync(target, { recursive: true, force: true });
 	}
-	cpSync(SOURCE, target, { recursive: true });
+	// The demo folder holds the sample bug report screenshot, which is not part of the app.
+	cpSync(SOURCE, target, {
+		recursive: true,
+		filter: (source) => path.relative(SOURCE, source) !== "demo",
+	});
 	const { git, commit } = deterministicRepo(target, {
 		name: "Lumen Goods Dev",
 		email: "dev@lumen-goods.example",

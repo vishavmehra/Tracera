@@ -154,6 +154,15 @@ export async function login(
 		return null;
 	}
 	if (!(await verifyPassword(input.password, user.passwordHash))) return null;
+	return startSession(db, user, meta);
+}
+
+/** Opens a session in the user's oldest workspace, the same way for every way of signing in; null when the user has none. */
+export async function startSession(
+	db: Db,
+	user: Pick<typeof users.$inferSelect, "id" | "email" | "displayName">,
+	meta: { ip: string; userAgent: string | undefined },
+) {
 	const [membership] = await db
 		.select({ workspace: workspaces, role: workspaceMembers.role })
 		.from(workspaceMembers)
