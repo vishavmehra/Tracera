@@ -28,9 +28,9 @@ import {
 	Time,
 } from "./ui.tsx";
 
-// Apply, commit, and push are three separate decisions on an approved patch. Each has its own
-// confirmation, nothing here runs on its own, and every result shown is what the server read back
-// from git.
+// Apply, commit, push, and pull request are four separate decisions on an approved patch. Each has its
+// own confirmation, nothing here runs on its own, and every result shown is what the server read back
+// from git or from GitHub's answer.
 
 /** Outcomes that mean no check ran, so nothing may be said about where verification happened. */
 const NOT_RUN = new Set(["blocked", "not_attempted"]);
@@ -62,6 +62,22 @@ const RECOVERY: Record<string, string> = {
 	acknowledgement_mismatch:
 		"Reload the page: the recorded verification outcome differs from the one you acknowledged.",
 	owner_required: "Only a workspace owner can change the repository.",
+	push_required: "Push the branch first; a pull request opens from it.",
+	github_token_missing:
+		"Set TRACERA_GITHUB_TOKEN in the server environment (a fine-grained token with Pull requests: write on this repository), then restart the server.",
+	remote_not_github:
+		"Only github.com remotes are supported: https://github.com/OWNER/REPO.git or git@github.com:OWNER/REPO.git.",
+	github_auth_failed:
+		"GitHub did not accept the token. Create a new one and update TRACERA_GITHUB_TOKEN.",
+	github_permission_denied:
+		"The token needs Pull requests: write on this repository.",
+	github_repository_not_found:
+		"Check the remote URL, and that the token can reach this repository.",
+	pull_request_exists:
+		"Nothing was created. Open the existing pull request on GitHub.",
+	github_rejected: "GitHub refused it; nothing was created.",
+	github_unreachable:
+		"A pull request may or may not exist. Check the repository on GitHub before trying again.",
 };
 
 export function PublicationPanel({ patch }: { patch: Patch }) {
@@ -168,6 +184,16 @@ function Actions({
 								committed={items.find(
 									(item) =>
 										item.kind === "commit" && item.status === "succeeded",
+								)}
+								auth={{
+									acknowledged_outcome: outcome,
+									acknowledged_risks: acknowledged,
+								}}
+							/>
+							<PullRequestStep
+								patch={patch}
+								pushed={items.find(
+									(item) => item.kind === "push" && item.status === "succeeded",
 								)}
 								auth={{
 									acknowledged_outcome: outcome,
@@ -438,6 +464,69 @@ function PushStep({
 	);
 }
 
+/** Appears once a push has succeeded: the pull request opens from the branch that push sent. */
+function PullRequestStep({
+	patch,
+	pushed,
+	auth,
+}: {
+	patch: Patch;
+	pushed: PatchAction | undefined;
+	auth: Authorization;
+}) {
+	const run = useRunAction(patch.id);
+	const titleId = useId();
+	const draftId = useId();
+	const suggested = patch.summary.slice(0, 200);
+	const [title, setTitle] = useState(suggested);
+	const [draft, setDraft] = useState(false);
+	if (!pushed) return null;
+	const from = `${pushed.result?.remote ?? ""}/${(pushed.result?.pushed_ref ?? "").replace(/^refs\/heads\//, "")}`;
+	return (
+		<Step
+			title="Open pull request"
+			hint="Opens a pull request on GitHub from the branch Tracera pushed, with the GitHub token set on the server. Tracera writes the text from stored facts. It never merges the pull request or changes it afterwards."
+			confirm={`Open ${draft ? "a draft pull request" : "a pull request"} from ${from} on GitHub?`}
+			confirmLabel="Confirm pull request"
+			ready={auth.acknowledged_risks && title.trim() !== ""}
+			pending={run.isPending}
+			error={run.error}
+			onRun={() =>
+				run.mutate({
+					kind: "pull_request",
+					// Left to the server while it is still the suggestion, so the server's own labels apply.
+					title: title.trim() === suggested.trim() ? undefined : title.trim(),
+					draft,
+					...auth,
+				})
+			}
+		>
+			<div>
+				<label htmlFor={titleId} className={labelClass}>
+					Title
+				</label>
+				<input
+					id={titleId}
+					className={inputClass}
+					value={title}
+					maxLength={200}
+					onChange={(event) => setTitle(event.target.value)}
+				/>
+			</div>
+			<label htmlFor={draftId} className="flex items-center gap-2.5">
+				<input
+					id={draftId}
+					type="checkbox"
+					className="size-4 shrink-0"
+					checked={draft}
+					onChange={(event) => setDraft(event.target.checked)}
+				/>
+				<span>Open as a draft</span>
+			</label>
+		</Step>
+	);
+}
+
 function ChangedFiles({
 	files,
 }: {
@@ -453,6 +542,32 @@ function ChangedFiles({
 				</li>
 			))}
 		</ul>
+	);
+}
+
+/** Says where the pull request was created: only a record from api.github.com is labelled and linked as GitHub's. */
+function PullRequestOutcome({ action }: { action: PatchAction }) {
+	const result = action.result;
+	const url = result?.pull_request_url;
+	if (!result || !url?.startsWith("https://github.com/")) return null;
+	const draft = action.params.draft === true ? " draft" : "";
+	const branch = (result.pushed_ref ?? "").replace(/^refs\/heads\//, "");
+	if (result.source === "github")
+		return (
+			<p className="mt-1">
+				[live] Opened{draft} pull request{" "}
+				<a className={linkClass} href={url} target="_blank" rel="noreferrer">
+					#{result.number}
+				</a>{" "}
+				on GitHub, from <code className="break-all text-xs">{branch}</code>.
+			</p>
+		);
+	return (
+		<p className="mt-1">
+			{result.source === "stand_in"
+				? `[mock] A local stand-in recorded${draft} pull request #${result.number}. Nothing was created on GitHub.`
+				: `Pull request #${result.number} is recorded, but the record does not say whether GitHub created it.`}
+		</p>
 	);
 }
 
@@ -509,6 +624,8 @@ function Outcome({
 				<ChangedFiles files={result.changed_files ?? []} />
 			</div>
 		);
+	if (action.kind === "pull_request")
+		return <PullRequestOutcome action={action} />;
 	return (
 		<p className="mt-1">
 			Pushed <code className="break-all text-xs">{result.pushed_ref}</code> to{" "}

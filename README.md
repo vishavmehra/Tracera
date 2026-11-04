@@ -16,9 +16,9 @@ The judging account is a shared email-and-password account with the workspace **
 
 ## Walkthrough video
 
-**[Watch the narrated walkthrough: diagrams/walkthrough/tracera-walkthrough.mp4](diagrams/walkthrough/tracera-walkthrough.mp4)** (29 min 26 s, 60 MB; captions also in [`tracera-walkthrough.srt`](diagrams/walkthrough/tracera-walkthrough.srt)). It explains each part of Tracera and narrates the 25 architecture diagrams next to the features they describe. It shows both ways to run it: the hosted website, and a local install on a laptop with its own database and Docker sandbox. On the laptop it follows a real Google Meet call from transcript import to a verified, applied patch, shows how the sandbox isolates repository code, analyses a screen recording, and drives Tracera from a coding agent through MCP. The voiceover is synthetic and the captions are burned in. Where a long wait is skipped, the narration says so.
+**[Watch the narrated walkthrough: diagrams/walkthrough/tracera-walkthrough.mp4](diagrams/walkthrough/tracera-walkthrough.mp4)** (29 min 26 s, 60 MB; captions also in [`tracera-walkthrough.srt`](diagrams/walkthrough/tracera-walkthrough.srt)). It explains each part of Tracera and narrates the architecture diagrams next to the features they describe. It shows both ways to run it: the hosted website, and a local install on a laptop with its own database and Docker sandbox. On the laptop it follows a real Google Meet call from transcript import to a verified, applied patch, shows how the sandbox isolates repository code, analyses a screen recording, and drives Tracera from a coding agent through MCP. The voiceover is synthetic and the captions are burned in. Where a long wait is skipped, the narration says so.
 
-**Architecture and workflow diagrams:** all 25 are in [`diagrams/`](diagrams/), as editable draw.io sources (`diagrams/src/`) and PNG (`diagrams/png/`), indexed with titles and captions in [`diagrams/index.json`](diagrams/index.json). Each is embedded below in the section it explains.
+**Architecture and workflow diagrams:** all 27 are in [`diagrams/`](diagrams/), as editable draw.io sources (`diagrams/src/`) and PNG (`diagrams/png/`), indexed with titles and captions in [`diagrams/index.json`](diagrams/index.json). Each is embedded below in the section it explains.
 
 ## Contents
 
@@ -64,7 +64,7 @@ Tracera makes each step explicit and inspectable:
 5. **Run it in the sandbox.** Tests, or a browser reproduction for UI bugs, run in a locked-down Docker container: first to reproduce the bug, then against the patch.
 6. **Verify.** The outcome is derived by rules from what the sandbox observed. A passing test suite alone never produces "verified".
 7. **Review.** The diff, impact analysis, evidence and a resolution report are shown for a person to approve or reject. Approval records a decision and changes no files.
-8. **Act, one authorization at a time.** Applying the patch to a working tree, committing it to a new branch, and pushing that branch are separate requests from a signed-in owner.
+8. **Act, one authorization at a time.** Applying the patch to a working tree, committing it to a new branch, pushing that branch, and opening a pull request are separate requests from a signed-in owner.
 
 ![Investigation stages and status machine](diagrams/png/05-pipeline-state-machine.png)
 
@@ -105,6 +105,7 @@ Each feature below covers what it does and how it works.
 - [Reproduction in the sandbox](#reproduction-in-the-sandbox)
 - [GitHub sync](#github-sync)
 - [Review and authorized actions](#review-and-authorized-actions)
+- [Opening a pull request](#opening-a-pull-request)
 - [Meetings and Google Meet](#meetings-and-google-meet)
 - [Chrome extension](#chrome-extension)
 - [MCP server](#mcp-server)
@@ -159,7 +160,20 @@ To register the App, open GitHub, Settings, Developer settings, GitHub Apps, New
 
 ![Authorized actions on an approved patch](diagrams/png/15-authorized-actions.png)
 
-A person reviews the diff, impact, evidence, and risks, then approves or rejects. Approval is a session-only decision and changes no files. Applying the patch to the local working tree, committing it to a new branch (from a temporary worktree, with a secret scan of the added lines), and pushing that branch (never forced, never to the default branch) are three separate requests that only a signed-in owner session can make. Each must echo the verification outcome the person saw and acknowledge the risks unless the outcome is `verified`, runs git with hooks disabled, and writes an audit event. API tokens and MCP clients get `session_required`.
+A person reviews the diff, impact, evidence, and risks, then approves or rejects. Approval is a session-only decision and changes no files. Applying the patch to the local working tree, committing it to a new branch (from a temporary worktree, with a secret scan of the added lines), and pushing that branch (never forced, never to the default branch), and opening a pull request from it are four separate requests that only a signed-in owner session can make. Each must echo the verification outcome the person saw and acknowledge the risks unless the outcome is `verified`, runs git with hooks disabled, and writes an audit event. API tokens and MCP clients get `session_required`.
+
+### Opening a pull request
+
+![Opening a pull request](diagrams/png/27-pull-request-opening.png)
+
+After a successful push, the patch review panel offers **Open pull request** as the fourth authorized action: a title field prefilled from the patch summary, an **Open as a draft** checkbox, and **Confirm pull request**. It is the same owner-session request as apply, commit, and push (`POST /api/v1/patches/{id}/actions` with `kind: "pull_request"`).
+
+- **What it needs.** An approved patch, an `acknowledged_outcome` equal to the recorded verification outcome (and `acknowledged_risks` unless it is `verified`), a successful push for this patch, and `TRACERA_GITHUB_TOKEN`. A hosted server refuses it (`unavailable_in_hosted_environment`), and tokens and MCP clients get `session_required`.
+- **Where it goes.** The head is the branch of the latest push. The repository comes from the push remote's URL (`https://github.com/OWNER/REPO` or `git@github.com:OWNER/REPO`; anything else is `remote_not_github`). The base is the request's `base`, or the repository's default branch.
+- **What it says.** The title is yours or the patch summary. The description is built by code from stored rows, never by a model: the summary, the diagnosis with its stored status, the files changed, and the stored verification outcome with the checks that ran and did not. Anything other than `verified` reads "Not verified". Text a model or the repository wrote is quoted as inert single lines (no mentions, issue references, or links) and secrets are redacted.
+- **What it records.** Only what GitHub answered: the URL and number, shown as "[live] Opened pull request #N on GitHub" with a link. Tracera never merges or edits the pull request afterwards.
+
+To set it up, create one fine-grained personal access token on GitHub, limited to the target repository, with **Contents: Read and write** and **Pull requests: Read and write** (Metadata: Read is added automatically), and set it as `TRACERA_GITHUB_TOKEN` in the server's environment. When it is set and the push address is a `github.com` https URL, the push step authenticates with the same token, handed to git through the process environment only and never in a URL, argument, file, or log; otherwise the machine's own git credentials are used. Register the repository as a local path whose remote points at the GitHub repository, run an investigation, approve the verified patch, then apply, commit, push, and open the pull request.
 
 ### Meetings and Google Meet
 
@@ -226,6 +240,7 @@ TRACERA_API_URL = "http://127.0.0.1:8787"
 - `apps/extension`: the Chrome extension.
 - `packages/contracts`: every request, response, and model-output schema (Zod), imported by every client.
 - PostgreSQL for state and the job queue; Docker for sandboxed execution.
+- Optional GitHub integration: a GitHub App for repository sync, and a personal access token for pushing and opening pull requests.
 
 ![Containers](diagrams/png/02-containers.png)
 
@@ -293,8 +308,9 @@ PostgreSQL holds workspaces, users, repositories, snapshots and the code graph, 
 - Dependencies are installed from lockfiles without lifecycle scripts, through a proxy that admits only the configured registry.
 - Models never act. They return strict-schema JSON that code validates; citations are checked, and hypothesis states and verification outcomes are set only by rules in code.
 - Nothing is reported as verified, fixed, or confirmed unless the stored data says so.
-- Approval changes no files. Apply, commit, and push are separate requests that only a signed-in owner session can make; git runs with hooks disabled and without force, and the default branch is refused.
+- Approval changes no files. Apply, commit, push, and open-pull-request are separate requests that only a signed-in owner session can make; git runs with hooks disabled and without force, and the default branch is refused. A pull request's text is built by code from stored rows, never by a model.
 - Secrets stay in the server environment: not in the web bundle, logs, or API responses, and they are redacted before every model call.
+- GitHub credentials (installation tokens from the GitHub App, and `TRACERA_GITHUB_TOKEN`) live in memory or the process environment, reach git only through its environment, and never appear in a URL, an argument, a file, or a log. GitHub endpoints are fixed, and redirects are never followed.
 - Every query is scoped to a workspace; cookie-authenticated changes require a custom header and a same-origin request, decided by the matched route.
 - Repository files, logs, transcripts, screenshots, and other inputs are treated as untrusted data.
 - Two integration suites hold every registered route to a written access rule (`apps/server/test/security-routes.ts`): a security matrix for authentication, token scopes, owner-only routes, and CSRF, and a workspace isolation suite for foreign IDs.
@@ -312,7 +328,7 @@ PostgreSQL holds workspaces, users, repositories, snapshots and the code graph, 
 | Meetings: transcript upload and Google Meet import | upload; Meet import for accounts on the Google test-user list | yes |
 | Investigations: findings, hypotheses, patch proposal | analysis only | full |
 | Sandbox: reproduction, browser evidence, verification | no | yes (Docker) |
-| Applying, committing, and pushing an approved patch | no (`unavailable_in_hosted_environment`) | yes, one authorization per action |
+| Applying, committing, pushing, and opening a pull request for an approved patch | no (`unavailable_in_hosted_environment`) | yes, one authorization per action |
 | Chrome extension and MCP server | yes, pointed at the hosted API | yes |
 
 The web app asks the API what the environment can do (`GET /api/v1/capabilities`) and labels unavailable features instead of hiding them. The local install keeps your code, database, and sandbox on your machine; only model calls and the optional Google Meet import use the network.
@@ -361,6 +377,7 @@ About `npm run setup`:
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Google Meet import |
 | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `TRACERA_GOOGLE_SIGNIN_NEW_USERS` | Continue with Google (`member` or `deny` for new users) |
 | `TRACERA_GITHUB_APP_ID`, `TRACERA_GITHUB_APP_PRIVATE_KEY_PATH`, `TRACERA_GITHUB_WEBHOOK_SECRET`, `TRACERA_GITHUB_CLIENT_ID`, `TRACERA_GITHUB_CLIENT_SECRET` | GitHub sync: all five must be set; the private key is a `.pem` file path on the server |
+| `TRACERA_GITHUB_TOKEN` | Opening pull requests, and pushing to a `github.com` remote with the same token: a fine-grained personal access token for the target repository (Contents and Pull requests, read and write) |
 | `TRACERA_TRUST_PROXY` | `true` behind a proxy such as Vercel |
 | `TRACERA_MAX_IMAGE_BYTES` | Largest screenshot or keyframe in bytes (default 8 MB) |
 
@@ -392,7 +409,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 ## Scope
 
 - The code graph parses JavaScript, TypeScript, and SQL; other languages are detected and counted.
-- Repositories are local git work trees inside `TRACERA_REPO_ROOTS`; the apply, commit, and push actions act on them, so they are local features.
+- Repositories are local git work trees inside `TRACERA_REPO_ROOTS`, or GitHub repositories synced through the GitHub App. The apply, commit, push, and pull-request actions need a local work tree, so they are local features; a GitHub-synced repository is a bare cache with no working tree.
 - Recording analysis rests on sampled keyframes at stated timestamps, not on every frame.
 - Accounts come from `npm run db:seed` and Google sign-in; personal access tokens are created through the REST API.
 - There is no CI pipeline.

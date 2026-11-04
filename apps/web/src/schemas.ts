@@ -827,7 +827,7 @@ export const ProviderMeetingListSchema = z.object({
 /** `view()` in apps/server/src/modules/publication.ts: one authorized action and what git reported. */
 export const PatchActionSchema = z.object({
 	id: idSchema("act"),
-	kind: z.enum(["apply", "commit", "push"]),
+	kind: z.enum(["apply", "commit", "push", "pull_request"]),
 	status: z.enum(["queued", "running", "succeeded", "failed", "refused"]),
 	acknowledged_outcome: VerificationOutcomeSchema.nullable(),
 	params: z.record(z.string(), z.unknown()),
@@ -846,6 +846,9 @@ export const PatchActionSchema = z.object({
 			branch: z.string().optional(),
 			remote: z.string().optional(),
 			pushed_ref: z.string().optional(),
+			pull_request_url: z.string().optional(),
+			number: z.number().int().optional(),
+			source: z.enum(["github", "stand_in"]).optional(),
 			detail: z.string().optional(),
 		})
 		.nullable(),

@@ -11,10 +11,11 @@ import {
 } from "@tracera/contracts";
 import { and, desc, eq, lt } from "drizzle-orm";
 import type pg from "pg";
-import type { Config } from "../config.ts";
+import { type Config, GITHUB_API_URL } from "../config.ts";
 import { type Db, withTransaction } from "../db/client.ts";
 import {
 	authorizedActions,
+	hypotheses,
 	investigations,
 	patchProposals,
 	repositories,
@@ -30,12 +31,21 @@ import { redactSecrets } from "../lib/redact.ts";
 import { audit } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
 import { HOSTED_ACTIONS } from "./capabilities.ts";
+import { GIT_REMOTE_HARDENING, gitAuthEnv } from "./github-app.ts";
+import {
+	createPullRequest,
+	GithubError,
+	parseGithubRemote,
+} from "./github-client.ts";
 import { idempotent } from "./idempotency.ts";
+import { buildPullRequest } from "./pull-request-text.ts";
 
-// Applying, committing, and pushing an approved patch. Each is a separate action the signed-in owner
-// authorizes explicitly; approval itself changes no files. Every result below is read back from git's
-// own output, and repository code never runs on the host: hooks, content filters, signing, and the
-// file system monitor are switched off for every call (see lib/git.ts for the shared hardening).
+// Applying, committing, pushing, and opening a pull request for an approved patch. Each is a separate
+// action the signed-in owner authorizes explicitly; approval itself changes no files. Every git result
+// below is read back from git's own output, and repository code never runs on the host: hooks, content
+// filters, signing, and the file system monitor are switched off for every call (see lib/git.ts for the
+// shared hardening). A pull request is the one action that does not use git to change anything: it is a
+// single request to GitHub, and its link comes from GitHub's answer alone.
 
 /** Stable codes for every way an action can end without succeeding: [HTTP status, message]. */
 const ERRORS = {
@@ -63,6 +73,24 @@ const ERRORS = {
 	remote_auth_failed: [502, "The remote did not accept the credentials"],
 	remote_rejected: [502, "The remote refused the push"],
 	push_failed: [502, "git could not push"],
+	push_required: [409, "Push the branch first"],
+	github_token_missing: [
+		409,
+		"Set TRACERA_GITHUB_TOKEN in the server environment to a fine-grained token with Pull requests: write on the repository, then restart the server",
+	],
+	remote_not_github: [
+		422,
+		"The remote is not a github.com repository (use https://github.com/OWNER/REPO.git or git@github.com:OWNER/REPO.git)",
+	],
+	github_auth_failed: [502, "GitHub did not accept the token"],
+	github_permission_denied: [502, "The token may not open pull requests here"],
+	github_repository_not_found: [
+		422,
+		"GitHub has no such repository for this token",
+	],
+	pull_request_exists: [409, "A pull request already exists for this branch"],
+	github_rejected: [422, "GitHub rejected the pull request"],
+	github_unreachable: [502, "GitHub gave no usable answer"],
 	git_failed: [500, "git failed"],
 	interrupted: [500, "The action was interrupted"],
 } as const;
@@ -74,6 +102,12 @@ const FAILED: ReadonlySet<ErrorCode> = new Set([
 	"remote_auth_failed",
 	"remote_rejected",
 	"push_failed",
+	"github_auth_failed",
+	"github_permission_denied",
+	"github_repository_not_found",
+	"pull_request_exists",
+	"github_rejected",
+	"github_unreachable",
 	"git_failed",
 	"interrupted",
 ]);
@@ -106,10 +140,16 @@ type Subject = {
 	run: typeof verificationRuns.$inferSelect | null;
 };
 type Committed = { branch: string; sha: string };
+/** What the last successful push sent: the remote's name, the branch on it, and the commit. */
+type Pushed = { remote: string; branch: string; sha: string };
 type Run = (
 	cwd: string,
 	args: readonly string[],
-	options?: { timeoutMs?: number; userConfig?: boolean },
+	options?: {
+		timeoutMs?: number;
+		userConfig?: boolean;
+		env?: Record<string, string>;
+	},
 ) => Promise<GitResult>;
 /** What the first, short transaction decided; the git work happens after it commits. */
 type Started = {
@@ -244,26 +284,47 @@ export async function downloadPatch(
 	}
 }
 
-/** The commit the user last had Tracera create for this patch, which is what a push sends. */
-async function latestCommit(
+/** What the latest successful action of a kind recorded for this patch. */
+async function latestResult(
 	db: Db,
 	patchId: string,
-): Promise<Committed | null> {
+	kind: "commit" | "push",
+): Promise<ActionResult | null> {
 	const [row] = await db
 		.select({ result: authorizedActions.result })
 		.from(authorizedActions)
 		.where(
 			and(
 				eq(authorizedActions.patchId, patchId),
-				eq(authorizedActions.kind, "commit"),
+				eq(authorizedActions.kind, kind),
 				eq(authorizedActions.status, "succeeded"),
 			),
 		)
 		.orderBy(desc(authorizedActions.createdAt), desc(authorizedActions.id))
 		.limit(1);
 	const result = ActionResultSchema.safeParse(row?.result);
-	return result.success && result.data.branch && result.data.commit_sha
-		? { branch: result.data.branch, sha: result.data.commit_sha }
+	return result.success ? result.data : null;
+}
+
+/** The commit the user last had Tracera create for this patch, which is what a push sends. */
+async function latestCommit(
+	db: Db,
+	patchId: string,
+): Promise<Committed | null> {
+	const result = await latestResult(db, patchId, "commit");
+	return result?.branch && result.commit_sha
+		? { branch: result.branch, sha: result.commit_sha }
+		: null;
+}
+
+/** The branch the user last had Tracera push for this patch, which is what a pull request is opened from. */
+async function latestPush(db: Db, patchId: string): Promise<Pushed | null> {
+	const result = await latestResult(db, patchId, "push");
+	const branch = result?.pushed_ref?.replace(/^refs\/heads\//, "") ?? "";
+	return result?.remote &&
+		result.commit_sha &&
+		BranchNameSchema.safeParse(branch).success
+		? { remote: result.remote, branch, sha: result.commit_sha }
 		: null;
 }
 
@@ -272,6 +333,8 @@ function refusalFor(
 	subject: Subject,
 	input: ActionRequest,
 	previous: Committed | null,
+	pushed: Pushed | null,
+	config: Config,
 ): ActionError | null {
 	if (!isApproved(subject))
 		return new ActionError("invalid_state", "The patch is not approved");
@@ -291,6 +354,10 @@ function refusalFor(
 		return new ActionError("risks_not_acknowledged");
 	if (input.kind === "push" && !previous)
 		return new ActionError("commit_required");
+	if (input.kind === "pull_request") {
+		if (!pushed) return new ActionError("push_required");
+		if (!config.githubPat.token) return new ActionError("github_token_missing");
+	}
 	return null;
 }
 
@@ -302,6 +369,11 @@ function paramsOf(
 		return { branch: input.branch ?? defaultBranchName(subject.patch.id) };
 	if (input.kind === "push")
 		return { remote: input.remote, remote_branch: input.remote_branch };
+	if (input.kind === "pull_request")
+		return {
+			base: input.base ?? subject.repository.defaultBranch,
+			draft: input.draft === true,
+		};
 	return {};
 }
 
@@ -357,6 +429,8 @@ function auditAction(
 						commit_sha: facts.result.commit_sha ?? null,
 						pushed_ref: facts.result.pushed_ref ?? null,
 						files_changed: facts.result.changed_files?.length ?? null,
+						pull_request_url: facts.result.pull_request_url ?? null,
+						pull_request_number: facts.result.number ?? null,
 					}
 				: {}),
 		},
@@ -418,7 +492,11 @@ export async function requestAction(
 			HOSTED_ACTIONS,
 		);
 	}
-	const loaded: { subject?: Subject; previous?: Committed | null } = {};
+	const loaded: {
+		subject?: Subject;
+		previous?: Committed | null;
+		pushed?: Pushed | null;
+	} = {};
 	const started = await idempotent<Started>(
 		deps,
 		{
@@ -432,9 +510,12 @@ export async function requestAction(
 			const subject = await loadSubject(db, ctx.workspaceId, patchId);
 			const previous =
 				input.kind === "push" ? await latestCommit(db, patchId) : null;
+			const pushed =
+				input.kind === "pull_request" ? await latestPush(db, patchId) : null;
 			loaded.subject = subject;
 			loaded.previous = previous;
-			const refused = refusalFor(subject, input, previous);
+			loaded.pushed = pushed;
+			const refused = refusalFor(subject, input, previous, pushed, deps.config);
 			if (refused)
 				return refuse(
 					db,
@@ -500,7 +581,14 @@ export async function requestAction(
 	let failure: ActionError | null = null;
 	let unexpected: unknown = null;
 	try {
-		result = await perform(deps, ctx, subject, input, loaded.previous ?? null);
+		result = await perform(
+			deps,
+			ctx,
+			subject,
+			input,
+			loaded.previous ?? null,
+			loaded.pushed ?? null,
+		);
 	} catch (error) {
 		if (error instanceof ActionError) failure = error;
 		else {
@@ -560,6 +648,7 @@ async function perform(
 	subject: Subject,
 	input: ActionRequest,
 	previous: Committed | null,
+	pushed: Pushed | null,
 ): Promise<ActionResult> {
 	const dir = await locateRepository(deps.config, subject.repository);
 	const scratch = await mkdtemp(path.join(os.tmpdir(), "tracera-action-"));
@@ -581,8 +670,19 @@ async function perform(
 				scratch,
 				run,
 			);
+		if (input.kind === "pull_request") {
+			if (!pushed) throw new ActionError("push_required");
+			return await openPullRequest(deps, subject, input, pushed, dir, run);
+		}
 		if (!previous) throw new ActionError("commit_required");
-		return await pushBranch(subject, input, previous, dir, run);
+		return await pushBranch(
+			subject,
+			input,
+			previous,
+			dir,
+			run,
+			deps.config.githubPat.token,
+		);
 	} finally {
 		// Best effort: a temp directory that cannot be removed must not turn a finished action into a failure.
 		await rm(scratch, { recursive: true, force: true, maxRetries: 3 }).catch(
@@ -1042,12 +1142,29 @@ function excerpt(text: string): string {
 	);
 }
 
+/**
+ * How a push authenticates. With TRACERA_GITHUB_TOKEN set and a github.com https push address, the
+ * token is the only credential: it reaches git through its environment for this one command (never in
+ * an argument, a URL, or a file), and the machine's credential helpers are switched off. Any other
+ * address, or no token, leaves git to the user's own credentials.
+ */
+export function pushAuth(
+	pushUrl: string,
+	token: string | null,
+): { args: string[]; env: Record<string, string> } | null {
+	const address = pushUrl.trim();
+	if (!token || !/^https:\/\//i.test(address) || !parseGithubRemote(address))
+		return null;
+	return { args: [...GIT_REMOTE_HARDENING], env: gitAuthEnv(token) };
+}
+
 async function pushBranch(
 	subject: Subject,
 	input: Extract<ActionRequest, { kind: "push" }>,
 	previous: Committed,
 	dir: string,
 	run: Run,
+	token: string | null,
 ): Promise<ActionResult> {
 	if (!BranchNameSchema.safeParse(previous.branch).success)
 		throw new ActionError("branch_changed");
@@ -1079,12 +1196,22 @@ async function pushBranch(
 	if (protectedBranches.has(input.remote_branch))
 		throw new ActionError("default_branch_refused");
 
+	const pushUrl = await run(
+		dir,
+		["remote", "get-url", "--push", "--", input.remote],
+		{ userConfig: true },
+	);
+	const auth = pushAuth(pushUrl.stdout, token);
 	const pushed = await run(
 		dir,
-		pushArgs(previous.branch, input.remote, input.remote_branch),
+		[
+			...(auth?.args ?? []),
+			...pushArgs(previous.branch, input.remote, input.remote_branch),
+		],
 		{
 			timeoutMs: SLOW_GIT_MS,
 			userConfig: true,
+			...(auth ? { env: auth.env } : {}),
 		},
 	);
 	// Porcelain lines are "<flag>\t<from>:<to>\t<summary>"; a space, "*", or "=" means the remote has it.
@@ -1125,4 +1252,82 @@ export function pushFailure(output: string, timedOut: boolean): ActionError {
 	if (/remote rejected|hook declined|protected branch/.test(lower))
 		return new ActionError("remote_rejected", excerpt(output));
 	return new ActionError("push_failed", excerpt(output));
+}
+
+// ---- Opening a pull request -------------------------------------------------------------------
+
+/**
+ * Opens one pull request on GitHub from the branch the last push sent. The repository comes from the
+ * remote's own URL, read now, and is accepted only in the two plain github.com spellings. The text is
+ * built from stored facts, and the result holds only what GitHub answered.
+ */
+async function openPullRequest(
+	deps: Deps,
+	subject: Subject,
+	input: Extract<ActionRequest, { kind: "pull_request" }>,
+	pushed: Pushed,
+	dir: string,
+	run: Run,
+): Promise<ActionResult> {
+	const { token, apiUrl } = deps.config.githubPat;
+	if (!token) throw new ActionError("github_token_missing");
+	const verification = subject.run;
+	if (!verification)
+		throw new ActionError(
+			"invalid_state",
+			"No verification outcome is recorded for this patch",
+		);
+	// The remote's own URL; the user's git configuration applies, as it did for the push.
+	const url = await run(dir, ["remote", "get-url", "--", pushed.remote], {
+		userConfig: true,
+	});
+	if (!url.ok) throw new ActionError("remote_not_found");
+	const repo = parseGithubRemote(url.stdout.trim());
+	if (!repo) throw new ActionError("remote_not_github");
+
+	const [hypothesis] = await deps.db
+		.select({
+			title: hypotheses.title,
+			mechanism: hypotheses.mechanism,
+			state: hypotheses.state,
+			confidence: hypotheses.confidence,
+		})
+		.from(hypotheses)
+		.where(eq(hypotheses.id, subject.patch.hypothesisId))
+		.limit(1);
+	const text = buildPullRequest({
+		patchId: subject.patch.id,
+		summary: subject.patch.summary,
+		hypothesis: hypothesis ?? null,
+		files: subject.patch.files,
+		outcome: verification.outcome,
+		outcomeReasons: verification.outcomeReasons,
+		checks: verification.checks,
+		mock: subject.patch.model?.provider === "mock",
+		commitSha: pushed.sha,
+		remote: pushed.remote,
+		branch: pushed.branch,
+		title: input.title,
+	});
+	try {
+		const created = await createPullRequest({ apiUrl, token }, repo, {
+			head: pushed.branch,
+			base: input.base ?? subject.repository.defaultBranch,
+			title: text.title,
+			body: text.body,
+			draft: input.draft === true,
+		});
+		return {
+			commit_sha: pushed.sha,
+			remote: pushed.remote,
+			pushed_ref: `refs/heads/${pushed.branch}`,
+			pull_request_url: created.url,
+			number: created.number,
+			source: apiUrl === GITHUB_API_URL ? "github" : "stand_in",
+		};
+	} catch (error) {
+		if (error instanceof GithubError)
+			throw new ActionError(error.code, error.message);
+		throw error;
+	}
 }

@@ -331,6 +331,8 @@ export type Config = {
 	} | null;
 	/** Names (never values) of the unset GitHub App variables; empty when configured. */
 	githubMissing: string[];
+	/** The personal access token that opens pull requests, and the API address it is sent to. */
+	githubPat: GithubPatConfig;
 };
 
 export function loadConfig(
@@ -456,6 +458,7 @@ export function loadConfig(
 					}
 				: null,
 		githubMissing: GITHUB_VARIABLES.filter((key) => !e[key]),
+		githubPat: loadGithubPatConfig(env),
 	};
 }
 
@@ -577,3 +580,65 @@ function loadMeetingsConfig(
 }
 
 // ---- end of the meetings section ----
+
+// ---- GitHub pull requests ----
+
+export const GITHUB_API_URL = "https://api.github.com";
+
+const GithubPatEnvSchema = z.object({
+	TRACERA_GITHUB_TOKEN: opt(
+		z
+			.string()
+			.regex(/^[\x21-\x7e]{1,500}$/, "must be one token with no spaces")
+			.optional(),
+	),
+	TRACERA_GITHUB_API_URL: opt(z.string().optional()),
+});
+
+export type GithubPatConfig = {
+	/** Used only to open pull requests; never returned, logged, or stored. Null when unset. */
+	token: string | null;
+	/** api.github.com, or a loopback http origin standing in for it in tests. */
+	apiUrl: string;
+};
+
+/** The origin of an http address on this machine, the only override of the API address allowed. */
+function loopbackOrigin(value: string): string | null {
+	try {
+		const url = new URL(value);
+		const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+		return url.protocol === "http:" &&
+			local &&
+			!url.username &&
+			!url.password &&
+			url.pathname === "/" &&
+			!url.search &&
+			!url.hash
+			? url.origin
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+function loadGithubPatConfig(
+	env: Record<string, string | undefined>,
+): GithubPatConfig {
+	const parsed = GithubPatEnvSchema.safeParse(env);
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0];
+		throw new ConfigError(
+			`Invalid configuration:\n- ${String(issue?.path[0] ?? "(root)")}: ${issue?.message ?? "invalid"}\nSee .env.example.`,
+		);
+	}
+	const override = parsed.data.TRACERA_GITHUB_API_URL;
+	const apiUrl =
+		override === undefined ? GITHUB_API_URL : loopbackOrigin(override);
+	if (apiUrl === null)
+		throw new ConfigError(
+			"Invalid configuration:\n- TRACERA_GITHUB_API_URL: must be a loopback http address such as http://127.0.0.1:4010\nSee .env.example.",
+		);
+	return { token: parsed.data.TRACERA_GITHUB_TOKEN ?? null, apiUrl };
+}
+
+// ---- end of the GitHub section ----

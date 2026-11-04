@@ -1267,12 +1267,13 @@ export const meetingCandidates = pgTable(
 );
 // ---- end of the meetings section ----------------------------------------------------------------
 
-// ---- User-authorized patch actions: apply, commit, push ----------------------------------------
+// ---- User-authorized patch actions: apply, commit, push, pull request --------------------------
 
 export const authorizedActionKind = pgEnum("authorized_action_kind", [
 	"apply",
 	"commit",
 	"push",
+	"pull_request",
 ]);
 export const authorizedActionStatus = pgEnum("authorized_action_status", [
 	"queued",

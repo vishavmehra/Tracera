@@ -5,7 +5,12 @@ import { idSchema, RefNameSchema } from "./common.ts";
 // Actions a signed-in user explicitly authorizes for an approved patch. Each is its own request: an
 // authorization for one never covers another, and tokens or MCP clients can never make one.
 
-export const ACTION_KINDS = ["apply", "commit", "push"] as const;
+export const ACTION_KINDS = [
+	"apply",
+	"commit",
+	"push",
+	"pull_request",
+] as const;
 export const ActionKindSchema = z.enum(ACTION_KINDS);
 export const ActionStatusSchema = z.enum([
 	"queued",
@@ -35,6 +40,16 @@ const CommitMessageSchema = z
 		message: "Contains a NUL byte",
 	});
 
+/** One line of plain text: a control character (a line break included) cannot reach a pull request title. */
+const PullRequestTitleSchema = z
+	.string()
+	.trim()
+	.min(1)
+	.max(200)
+	.refine((title) => !/\p{Cc}/u.test(title), {
+		message: "Contains a control character",
+	});
+
 // Omitting an acknowledgement is not a validation error: the server refuses it with a stable code
 // (`acknowledgement_mismatch`), so a client that forgot it learns what to send.
 const authorization = {
@@ -60,6 +75,16 @@ export const ActionRequestSchema = z.discriminatedUnion("kind", [
 		remote_branch: BranchNameSchema,
 		...authorization,
 	}),
+	// The branch to open it from is the one the last successful push sent, so the request names none.
+	z.strictObject({
+		kind: z.literal("pull_request"),
+		/** The branch to merge into; defaults to the repository's default branch. */
+		base: BranchNameSchema.optional(),
+		/** Defaults to the patch summary. */
+		title: PullRequestTitleSchema.optional(),
+		draft: z.boolean().optional(),
+		...authorization,
+	}),
 ]);
 
 /** Everything here comes from git's own output, except `detail`, a short redacted line for failures. */
@@ -78,6 +103,11 @@ export const ActionResultSchema = z.object({
 	branch: z.string().optional(),
 	remote: z.string().optional(),
 	pushed_ref: z.string().optional(),
+	/** Pull request: the link and number exactly as the provider answered; absent unless it did. */
+	pull_request_url: z.string().optional(),
+	number: z.number().int().optional(),
+	/** Pull request: `github` when api.github.com created it; `stand_in` when a local stand-in answered, so nothing exists on GitHub. */
+	source: z.enum(["github", "stand_in"]).optional(),
 	detail: z.string().optional(),
 });
 

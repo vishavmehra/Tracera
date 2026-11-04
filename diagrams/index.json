@@ -144,7 +144,7 @@
     "file": "15-authorized-actions",
     "title": "Authorized actions on an approved patch",
     "description": "Approval versus the three explicit actions, the checks before each, and what each one does in git.",
-    "caption": "A person approves in a session; later an owner session can request apply, commit and push one at a time. Each request must echo the verification outcome it saw, acknowledges risks unless verified, runs git with hooks off and without force, and writes an audit event.",
+    "caption": "A person approves in a session; later an owner session can request apply, commit, push and open a pull request one at a time. Each request must echo the verification outcome it saw, acknowledges risks unless verified, runs git with hooks off and without force, and writes an audit event.",
     "group": "Actions and access",
     "drawio": "src/15-authorized-actions.drawio",
     "png": "png/15-authorized-actions.png"
@@ -258,5 +258,15 @@
     "group": "Integrations",
     "drawio": "src/26-github-app-sync.drawio",
     "png": "png/26-github-app-sync.png"
+  },
+  {
+    "id": "27",
+    "file": "27-pull-request-opening",
+    "title": "Opening a pull request",
+    "description": "The pull_request action: preconditions, target discovery from the pushed branch, code-built text, one GitHub call and the recorded result.",
+    "caption": "An owner session requests kind pull_request on an approved patch that has a successful push. Tracera finds the pushed branch and the GitHub repository from the remote URL, builds the title and description from stored rows (never a model), makes one call to GitHub with TRACERA_GITHUB_TOKEN, and records only what GitHub answered. It never merges or edits the pull request afterwards.",
+    "group": "Actions and access",
+    "drawio": "src/27-pull-request-opening.drawio",
+    "png": "png/27-pull-request-opening.png"
   }
 ]

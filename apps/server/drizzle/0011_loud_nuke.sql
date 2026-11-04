@@ -1,0 +1,1 @@
+ALTER TYPE "public"."authorized_action_kind" ADD VALUE 'pull_request';

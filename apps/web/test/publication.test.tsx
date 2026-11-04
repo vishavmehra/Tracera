@@ -353,3 +353,223 @@ describe("the apply and publish panel", () => {
 		expect(screen.queryByText(/Pushed/)).toBeNull();
 	});
 });
+
+describe("the open pull request step", () => {
+	const SHA = "9a8b7c6d5e4f30219a8b7c6d5e4f30219a8b7c6d";
+	// The acknowledgement is the first checkbox; the draft choice is another.
+	const ack = async () =>
+		fireEvent.click((await screen.findAllByRole("checkbox"))[0] as HTMLElement);
+	const URL = "https://github.com/acme/widgets/pull/7";
+	const pushed = action({
+		id: "act_01JC9Z3K8Q5V7W2X4Y6Z8A0B3E",
+		kind: "push",
+		params: { remote: "origin", remote_branch: "fix/total" },
+		result: {
+			commit_sha: SHA,
+			branch: `tracera/${PAT}`,
+			remote: "origin",
+			pushed_ref: "refs/heads/fix/total",
+		},
+	});
+	const opened = (
+		result: Record<string, unknown>,
+		overrides: Record<string, unknown> = {},
+	) =>
+		action({
+			id: "act_01JC9Z3K8Q5V7W2X4Y6Z8A0B4F",
+			kind: "pull_request",
+			params: { base: "main", draft: false },
+			result: {
+				commit_sha: SHA,
+				remote: "origin",
+				pushed_ref: "refs/heads/fix/total",
+				pull_request_url: URL,
+				number: 7,
+				...result,
+			},
+			...overrides,
+		});
+
+	it("is not offered until a push has succeeded", async () => {
+		stubApi({ [`GET ${ACTIONS}`]: listing([committed]) });
+		renderPanel(patch());
+		await screen.findByText(/^Committed\s+on branch/);
+		expect(
+			screen.queryByRole("button", { name: "Open pull request" }),
+		).toBeNull();
+		expect(screen.queryByLabelText("Title")).toBeNull();
+	});
+
+	it("stays off until the outcome is acknowledged, with the patch summary as the suggested title", async () => {
+		stubApi({ [`GET ${ACTIONS}`]: listing([committed, pushed]) });
+		renderPanel(patch());
+		const open = await screen.findByRole("button", {
+			name: "Open pull request",
+		});
+		expect((open as HTMLButtonElement).disabled).toBe(true);
+		expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe(
+			"Multiply price by quantity",
+		);
+		await ack();
+		expect((open as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it("asks again, then sends only what the user chose, leaving an unchanged title to the server", async () => {
+		const calls = stubApi({
+			[`GET ${ACTIONS}`]: listing([committed, pushed]),
+			[`POST ${ACTIONS}`]: json({ action: opened({ source: "github" }) }, 201),
+		});
+		renderPanel(patch());
+		await ack();
+		fireEvent.click(button("Open pull request"));
+		expect(calls.filter((call) => call.method === "POST")).toEqual([]);
+		expect(
+			screen.getByText("Open a pull request from origin/fix/total on GitHub?"),
+		).toBeTruthy();
+		fireEvent.click(button("Confirm pull request"));
+		await screen.findByRole("button", { name: "Open pull request" });
+		expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+			kind: "pull_request",
+			draft: false,
+			acknowledged_outcome: "verified",
+			acknowledged_risks: true,
+		});
+	});
+
+	it("sends an edited title and the draft choice, and the confirmation says draft", async () => {
+		const calls = stubApi({
+			[`GET ${ACTIONS}`]: listing([committed, pushed]),
+			[`POST ${ACTIONS}`]: json(
+				{
+					action: opened(
+						{ source: "github" },
+						{ params: { base: "main", draft: true } },
+					),
+				},
+				201,
+			),
+		});
+		renderPanel(patch());
+		await ack();
+		fireEvent.click(screen.getByLabelText("Open as a draft"));
+		fireEvent.change(screen.getByLabelText("Title"), {
+			target: { value: "Cart totals count quantity" },
+		});
+		fireEvent.click(button("Open pull request"));
+		expect(
+			screen.getByText(
+				"Open a draft pull request from origin/fix/total on GitHub?",
+			),
+		).toBeTruthy();
+		fireEvent.click(button("Confirm pull request"));
+		await screen.findByRole("button", { name: "Open pull request" });
+		expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+			kind: "pull_request",
+			title: "Cart totals count quantity",
+			draft: true,
+			acknowledged_outcome: "verified",
+			acknowledged_risks: true,
+		});
+	});
+
+	it("labels a pull request GitHub created and links to it", async () => {
+		stubApi({
+			[`GET ${ACTIONS}`]: listing([
+				committed,
+				pushed,
+				opened({ source: "github" }),
+			]),
+		});
+		renderPanel(patch());
+		const link = await screen.findByRole("link", { name: "#7" });
+		expect(link.getAttribute("href")).toBe(URL);
+		expect(link.getAttribute("rel")).toBe("noreferrer");
+		const line = link.closest("p");
+		expect(line?.textContent).toBe(
+			"[live] Opened pull request #7 on GitHub, from fix/total.",
+		);
+	});
+
+	it("says plainly that a local stand-in recorded it, and offers no link", async () => {
+		stubApi({
+			[`GET ${ACTIONS}`]: listing([
+				committed,
+				pushed,
+				opened({ source: "stand_in" }),
+			]),
+		});
+		renderPanel(patch());
+		expect(
+			await screen.findByText(
+				"[mock] A local stand-in recorded pull request #7. Nothing was created on GitHub.",
+			),
+		).toBeTruthy();
+		expect(screen.queryByRole("link", { name: "#7" })).toBeNull();
+		expect(screen.queryByText(/\[live\]/)).toBeNull();
+	});
+
+	it("does not claim GitHub created a record that does not say so, and shows no foreign link", async () => {
+		stubApi({
+			[`GET ${ACTIONS}`]: listing([
+				committed,
+				pushed,
+				opened({}, { id: "act_01JC9Z3K8Q5V7W2X4Y6Z8A0B5G" }),
+				opened(
+					{ source: "github", pull_request_url: "https://evil.example/x" },
+					{ id: "act_01JC9Z3K8Q5V7W2X4Y6Z8A0B6H" },
+				),
+			]),
+		});
+		renderPanel(patch());
+		expect(
+			await screen.findByText(
+				"Pull request #7 is recorded, but the record does not say whether GitHub created it.",
+			),
+		).toBeTruthy();
+		expect(screen.queryByText(/\[live\]/)).toBeNull();
+		expect(screen.queryByRole("link", { name: "#7" })).toBeNull();
+		expect(screen.queryByText(/evil\.example/)).toBeNull();
+	});
+
+	it("names the variable to set when the server has no token", async () => {
+		stubApi({
+			[`GET ${ACTIONS}`]: listing([committed, pushed]),
+			[`POST ${ACTIONS}`]: problem(
+				409,
+				"github_token_missing",
+				"Set TRACERA_GITHUB_TOKEN in the server environment",
+			),
+		});
+		renderPanel(patch());
+		await ack();
+		fireEvent.click(button("Open pull request"));
+		fireEvent.click(button("Confirm pull request"));
+		const alert = await screen.findByRole("alert");
+		expect(within(alert).getByText("github_token_missing")).toBeTruthy();
+		expect(
+			screen.getByText(
+				/Set TRACERA_GITHUB_TOKEN in the server environment \(a fine-grained token/,
+			),
+		).toBeTruthy();
+	});
+
+	it("lists a failed attempt by its code, never as opened, and says the outcome may be unknown", async () => {
+		stubApi({
+			[`GET ${ACTIONS}`]: listing([
+				committed,
+				pushed,
+				action({
+					id: "act_01JC9Z3K8Q5V7W2X4Y6Z8A0B7J",
+					kind: "pull_request",
+					status: "failed",
+					result: { detail: "GitHub did not answer in time" },
+					error_code: "github_unreachable",
+				}),
+			]),
+		});
+		renderPanel(patch());
+		expect(await screen.findByText("github_unreachable")).toBeTruthy();
+		expect(screen.getByText(/may or may not exist/)).toBeTruthy();
+		expect(screen.queryByText(/Opened/)).toBeNull();
+	});
+});

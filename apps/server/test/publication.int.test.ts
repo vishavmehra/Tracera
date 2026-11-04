@@ -11,14 +11,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Writable } from "node:stream";
 import { AuthorizedActionSchema } from "@tracera/contracts";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { buildApp } from "../src/api/app.ts";
+import { loadConfig } from "../src/config.ts";
 import {
 	auditEvents,
 	authorizedActions,
 	bugReports,
 	hypotheses,
+	idempotencyKeys,
 	investigations,
 	patchProposals,
 	repositories,
@@ -27,6 +31,11 @@ import {
 import { putBlob } from "../src/lib/fs.ts";
 import { newId } from "../src/lib/ids.ts";
 import { stageAndDiff } from "../src/modules/workspace.ts";
+import {
+	type GithubStub,
+	type StubReply,
+	startGithubStub,
+} from "./github-stub.ts";
 import {
 	addMember,
 	asSession,
@@ -1027,9 +1036,14 @@ describe("on a hosted server", () => {
 	const onHosted = (credentials = cookie) => asSession(hosted, credentials);
 	const branches = (s: Scenario) => git(s.repoDir, "branch", "--list");
 
-	it("refuses apply, commit, and push with a stable code, and changes nothing", async () => {
+	it("refuses apply, commit, push, and pull request with a stable code, and changes nothing", async () => {
 		const s = await seedScenario();
-		for (const body of [{ kind: "apply" }, { kind: "commit" }, pushBody()]) {
+		for (const body of [
+			{ kind: "apply" },
+			{ kind: "commit" },
+			pushBody(),
+			{ kind: "pull_request" },
+		]) {
 			const response = await onHosted()("POST", actionsUrl(s), {
 				...authorize(s),
 				...body,
@@ -1041,7 +1055,7 @@ describe("on a hosted server", () => {
 			});
 		}
 		expect(await rows(s)).toEqual([]);
-		for (const kind of ["apply", "commit", "push"])
+		for (const kind of ["apply", "commit", "push", "pull_request"])
 			expect(await audits(`publication.${kind}`)).toEqual([]);
 		expect(status(s.repoDir)).toBe("");
 		expect(branches(s)).toBe("* main");
@@ -1108,5 +1122,653 @@ describe("on a hosted server", () => {
 		);
 		expect(response.statusCode).toBe(200);
 		expect(response.body).toBe(s.diff);
+	});
+});
+
+describe("opening a pull request", () => {
+	// Credential-shaped test values are assembled at run time, so the source holds no secret-like literal.
+	const GITHUB_TOKEN = [
+		"github_pat_",
+		"P".repeat(24),
+		"_",
+		"z".repeat(40),
+	].join("");
+	const ADDRESS = "https://github.com/acme/widgets.git";
+	let github: GithubStub;
+	let pr: TestContext;
+	// A second server on the same database whose GitHub address is the local stand-in. The base server
+	// has no token configured, which is the "token missing" case.
+	beforeAll(async () => {
+		github = await startGithubStub();
+		pr = await createTestContext({
+			TRACERA_GITHUB_TOKEN: GITHUB_TOKEN,
+			TRACERA_GITHUB_API_URL: github.url,
+			TRACERA_DATA_DIR: ctx.config.dataDir,
+			TRACERA_REPO_ROOTS: ctx.repoRoot,
+		});
+	});
+	afterAll(async () => {
+		await pr.close();
+		await github.close();
+	});
+	beforeEach(() => {
+		github.calls.length = 0;
+		github.respond(() => created());
+	});
+
+	const created = (number = 7): StubReply => ({
+		status: 201,
+		json: {
+			number,
+			html_url: `https://github.com/acme/widgets/pull/${number}`,
+		},
+	});
+	const owned = () => asSession(pr, cookie);
+	const send = (
+		s: Scenario,
+		body: Record<string, unknown>,
+		headers: Record<string, string> = {},
+	) => owned()("POST", actionsUrl(s), { ...authorize(s), ...body }, headers);
+	const open = (
+		s: Scenario,
+		extra: Record<string, unknown> = {},
+		headers: Record<string, string> = {},
+	) => send(s, { kind: "pull_request", ...extra }, headers);
+	const pullRequests = async (s: Scenario) =>
+		(await rows(s)).filter((row) => row.kind === "pull_request");
+	const sentOnce = () =>
+		github.calls[0]?.body as {
+			title: string;
+			body: string;
+			head: string;
+			base: string;
+			draft: boolean;
+		};
+
+	/** The repository's address is GitHub's, while a push still lands in the local bare remote. */
+	function pointAtGithub(s: Scenario, address = ADDRESS) {
+		git(s.repoDir, "remote", "set-url", "origin", address);
+		git(s.repoDir, "remote", "set-url", "--push", "origin", s.remoteDir);
+	}
+	/** A patch committed and pushed to fix/total through Tracera's own actions. */
+	async function pushed(options: Parameters<typeof seedScenario>[0] = {}) {
+		const s = await seedScenario(options);
+		pointAtGithub(s);
+		const commit = await send(s, { kind: "commit" });
+		expect(commit.statusCode, commit.body).toBe(201);
+		const push = await send(s, pushBody());
+		expect(push.statusCode, push.body).toBe(201);
+		return s;
+	}
+
+	it("opens it from the pushed branch with text built from the stored facts, and records GitHub's answer", async () => {
+		const s = await pushed();
+		const before = {
+			status: status(s.repoDir),
+			branches: git(s.repoDir, "branch", "--list"),
+			head: git(s.repoDir, "rev-parse", "HEAD"),
+		};
+		const response = await open(s);
+		expect(response.statusCode, response.body).toBe(201);
+		const { action } = response.json();
+		AuthorizedActionSchema.parse(action);
+		expect(action).toMatchObject({
+			kind: "pull_request",
+			status: "succeeded",
+			requested_by: owner.userId,
+			acknowledged_outcome: "verified",
+			error_code: null,
+			params: { base: "main", draft: false },
+			result: {
+				pull_request_url: "https://github.com/acme/widgets/pull/7",
+				number: 7,
+				source: "stand_in",
+				remote: "origin",
+				pushed_ref: "refs/heads/fix/total",
+				commit_sha: git(s.repoDir, "rev-parse", s.branch),
+			},
+		});
+
+		expect(github.calls).toHaveLength(1);
+		const [call] = github.calls;
+		expect(call).toMatchObject({
+			method: "POST",
+			path: "/repos/acme/widgets/pulls",
+		});
+		expect(call?.headers.authorization).toBe(`Bearer ${GITHUB_TOKEN}`);
+		const sent = sentOnce();
+		expect(sent).toMatchObject({
+			title: "Multiply price by quantity in the cart total",
+			head: "fix/total",
+			base: "main",
+			draft: false,
+		});
+		expect(sent.body).toContain("## Diagnosis\n**Quantity is ignored**");
+		expect(sent.body).toContain("- `src/total.js` (modified, +1 -1)");
+		expect(sent.body).toContain("- `src/format.js` (added, +1 -0)");
+		expect(sent.body).toContain(
+			"## Verification\nFix verified against the original reproduction.",
+		);
+		expect(sent.body).toContain(
+			`Tracera patch \`${s.patchId}\`, commit \`${action.result.commit_sha}\`, pushed to \`origin/fix/total\`.`,
+		);
+		expect(sent.body.split("\n").at(-1)).toBe(
+			"Opened by Tracera on the user's explicit authorization. Review before merging.",
+		);
+		expect(sent.body).not.toMatch(/mock/i);
+
+		// Opening it changes nothing in the repository.
+		expect({
+			status: status(s.repoDir),
+			branches: git(s.repoDir, "branch", "--list"),
+			head: git(s.repoDir, "rev-parse", "HEAD"),
+		}).toEqual(before);
+		const [event] = await audits("publication.pull_request");
+		expect(event).toMatchObject({
+			actorType: "user",
+			actorId: owner.userId,
+			targetType: "patch",
+			targetId: s.patchId,
+		});
+		expect(event?.metadata).toMatchObject({
+			action_id: action.id,
+			status: "succeeded",
+			base: "main",
+			draft: false,
+			pushed_ref: "refs/heads/fix/total",
+			pull_request_url: "https://github.com/acme/widgets/pull/7",
+			pull_request_number: 7,
+		});
+		expect(JSON.stringify(event?.metadata)).not.toContain("Multiply price");
+		const list = (await owned()("GET", actionsUrl(s))).json() as {
+			items: Array<{ kind: string; result: { number?: number } }>;
+		};
+		expect(list.items[0]).toMatchObject({
+			kind: "pull_request",
+			result: { number: 7 },
+		});
+	});
+
+	it("takes the user's title, base branch, and draft choice", async () => {
+		const s = await pushed();
+		const response = await open(s, {
+			title: "Cart totals now count quantity",
+			base: "develop",
+			draft: true,
+		});
+		expect(response.statusCode, response.body).toBe(201);
+		expect(sentOnce()).toMatchObject({
+			title: "Cart totals now count quantity",
+			base: "develop",
+			draft: true,
+		});
+		expect(response.json().action.params).toEqual({
+			base: "develop",
+			draft: true,
+		});
+	});
+
+	it("labels a mock patch and says exactly what did and did not run when it is not verified", async () => {
+		const s = await pushed({ outcome: "partially_verified" });
+		const check = (
+			kind: "unit_tests" | "lint",
+			status: "passed" | "blocked",
+		) => ({
+			kind,
+			status,
+			reason: status === "blocked" ? "no_lint_command" : null,
+			command: null,
+			exit_code: null,
+			duration_ms: null,
+			summary: {},
+			sandbox_run_ids: [],
+		});
+		await ctx.db
+			.update(patchProposals)
+			.set({ model: { provider: "mock", model: "mock-reasoner" } })
+			.where(eq(patchProposals.id, s.patchId));
+		await ctx.db
+			.update(verificationRuns)
+			.set({
+				checks: [check("unit_tests", "passed"), check("lint", "blocked")],
+				outcomeReasons: ["baseline_not_reproduced"],
+			})
+			.where(eq(verificationRuns.patchId, s.patchId));
+		const response = await open(s);
+		expect(response.statusCode, response.body).toBe(201);
+		const { title, body } = sentOnce();
+		expect(title).toBe("[mock] Multiply price by quantity in the cart total");
+		expect(
+			body.startsWith("**[mock]** This patch came from Tracera's mock"),
+		).toBe(true);
+		expect(body).toContain(
+			"## Verification\nNot fully verified: the checks passed, but the original failure was not confirmed.",
+		);
+		expect(body).toContain("Checks that ran: unit_tests (passed).");
+		expect(body).toContain(
+			"Checks that did not run: lint (blocked: no_lint_command).",
+		);
+		expect(body).toContain("Recorded reasons: baseline_not_reproduced.");
+		expect(body).not.toMatch(/fix verified|\bfixed\b|tests? pass|root cause/i);
+	});
+
+	it.each<[string, StubReply, number, string]>([
+		[
+			"a refused token",
+			{ status: 401, json: { message: "Bad credentials" } },
+			502,
+			"github_auth_failed",
+		],
+		[
+			"a token without the permission",
+			{ status: 403, json: { message: "Resource not accessible" } },
+			502,
+			"github_permission_denied",
+		],
+		[
+			"a repository the token cannot see",
+			{ status: 404, json: { message: "Not Found" } },
+			422,
+			"github_repository_not_found",
+		],
+		[
+			"a validation failure",
+			{
+				status: 422,
+				json: {
+					message: "Validation Failed",
+					errors: [{ message: "No commits between main and fix/total" }],
+				},
+			},
+			422,
+			"github_rejected",
+		],
+		[
+			"a server error",
+			{ status: 503, json: { message: "unavailable" } },
+			502,
+			"github_unreachable",
+		],
+		[
+			"a dropped connection",
+			{ status: 201, drop: true },
+			502,
+			"github_unreachable",
+		],
+		[
+			"a 201 without a usable link",
+			{ status: 201, json: { number: 7 } },
+			502,
+			"github_unreachable",
+		],
+	])(
+		"maps %s to a stable code and records it as failed",
+		async (_name, reply, httpStatus, code) => {
+			const s = await pushed();
+			github.respond(() => reply);
+			const response = await open(s);
+			expect(response.statusCode, response.body).toBe(httpStatus);
+			expect(response.json()).toMatchObject({
+				code,
+				action_id: expect.stringMatching(/^act_/),
+			});
+			const [row] = await pullRequests(s);
+			expect(row).toMatchObject({ status: "failed", errorCode: code });
+			expect(row?.result).not.toHaveProperty("pull_request_url");
+			expect(github.calls).toHaveLength(1);
+			const [event] = await audits("publication.pull_request");
+			expect(event?.metadata).toMatchObject({
+				status: "failed",
+				error_code: code,
+			});
+			expect(event?.metadata).not.toHaveProperty("pull_request_url");
+		},
+	);
+
+	it("tells an existing pull request apart, and names it when GitHub lists one", async () => {
+		const s = await pushed();
+		github.respond((call) =>
+			call.method === "POST"
+				? {
+						status: 422,
+						json: {
+							message: "Validation Failed",
+							errors: [
+								{
+									message: "A pull request already exists for acme:fix/total.",
+								},
+							],
+						},
+					}
+				: {
+						status: 200,
+						json: [{ html_url: "https://github.com/acme/widgets/pull/3" }],
+					},
+		);
+		const response = await open(s);
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({
+			code: "pull_request_exists",
+			detail:
+				"A pull request already exists for this branch: https://github.com/acme/widgets/pull/3",
+		});
+		expect((await pullRequests(s))[0]).toMatchObject({
+			status: "failed",
+			errorCode: "pull_request_exists",
+		});
+	});
+
+	it("never follows a redirect to another address", async () => {
+		const elsewhere = await startGithubStub(() => created());
+		try {
+			const s = await pushed();
+			github.respond(() => ({
+				status: 307,
+				headers: { location: `${elsewhere.url}/repos/acme/widgets/pulls` },
+			}));
+			const response = await open(s);
+			expect(response.statusCode).toBe(422);
+			expect(response.json().code).toBe("github_rejected");
+			expect(elsewhere.calls).toEqual([]);
+		} finally {
+			await elsewhere.close();
+		}
+	});
+
+	it("needs a successful push first, and sends nothing without one", async () => {
+		const s = await seedScenario();
+		pointAtGithub(s);
+		expect((await send(s, { kind: "commit" })).statusCode).toBe(201);
+		const early = await open(s);
+		expect(early.statusCode).toBe(409);
+		expect(early.json().code).toBe("push_required");
+		// A push that was refused is not a push.
+		const refused = await send(s, { ...pushBody(), remote_branch: "main" });
+		expect(refused.json().code).toBe("default_branch_refused");
+		expect((await open(s)).json().code).toBe("push_required");
+		expect(github.calls).toEqual([]);
+		expect((await pullRequests(s)).map((row) => row.status)).toEqual([
+			"refused",
+			"refused",
+		]);
+	});
+
+	it("names the variable to set when no token is configured, and sends nothing", async () => {
+		const s = await seedScenario();
+		pointAtGithub(s);
+		expect((await act(s, { kind: "commit" })).statusCode).toBe(201);
+		expect((await act(s, pushBody())).statusCode).toBe(201);
+		const response = await act(s, { kind: "pull_request" });
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({
+			code: "github_token_missing",
+			detail: expect.stringContaining("TRACERA_GITHUB_TOKEN"),
+		});
+		expect((await pullRequests(s))[0]).toMatchObject({
+			status: "refused",
+			errorCode: "github_token_missing",
+		});
+		expect(
+			(await audits("publication.pull_request"))[0]?.metadata,
+		).toMatchObject({ status: "refused", error_code: "github_token_missing" });
+		expect(github.calls).toEqual([]);
+	});
+
+	it.each([
+		["a path on disk", "LOCAL"],
+		[
+			"an address with credentials",
+			"https://dev:hunter2-secret-value@github.com/acme/widgets.git",
+		],
+		["another host", "https://gitlab.com/acme/widgets.git"],
+		["an ssh:// address", "ssh://git@github.com/acme/widgets.git"],
+	])(
+		"refuses a remote that is %s, without echoing it",
+		async (_name, address) => {
+			const s = await pushed();
+			pointAtGithub(s, address === "LOCAL" ? s.remoteDir : address);
+			const response = await open(s);
+			expect(response.statusCode).toBe(422);
+			expect(response.json().code).toBe("remote_not_github");
+			expect(github.calls).toEqual([]);
+			expect((await pullRequests(s))[0]).toMatchObject({ status: "refused" });
+			const stored = JSON.stringify([
+				response.body,
+				await rows(s),
+				await audits("publication.pull_request"),
+			]);
+			expect(stored).not.toContain("hunter2-secret-value");
+		},
+	);
+
+	it("reports a remote that was removed after the push", async () => {
+		const s = await pushed();
+		git(s.repoDir, "remote", "remove", "origin");
+		const response = await open(s);
+		expect(response.statusCode).toBe(422);
+		expect(response.json().code).toBe("remote_not_found");
+		expect(github.calls).toEqual([]);
+	});
+
+	it("needs the acknowledgement of the recorded outcome, as the other actions do", async () => {
+		const s = await pushed({ outcome: "partially_verified" });
+		const ask = (body: Record<string, unknown>) =>
+			owned()("POST", actionsUrl(s), { kind: "pull_request", ...body });
+		for (const body of [
+			{},
+			{ acknowledged_outcome: "verified", acknowledged_risks: true },
+		]) {
+			const response = await ask(body);
+			expect(response.statusCode).toBe(422);
+			expect(response.json().code).toBe("acknowledgement_mismatch");
+		}
+		const risks = await ask({
+			acknowledged_outcome: "partially_verified",
+			acknowledged_risks: false,
+		});
+		expect(risks.statusCode).toBe(422);
+		expect(risks.json().code).toBe("risks_not_acknowledged");
+		expect(github.calls).toEqual([]);
+		expect(await pullRequests(s)).toHaveLength(3);
+	});
+
+	it.each([
+		["a title with a line break", { title: "one\ntwo" }],
+		["a title over 200 characters", { title: "t".repeat(201) }],
+		["an empty title", { title: "   " }],
+		["a draft flag that is not a boolean", { draft: "yes" }],
+		["a base branch git would refuse", { base: "-bad" }],
+		["a field it does not take", { remote: "origin" }],
+	])("rejects %s before anything is recorded", async (_name, extra) => {
+		const s = await pushed();
+		const response = await open(s, extra);
+		expect(response.statusCode).toBe(400);
+		expect(response.json().code).toBe("validation_failed");
+		expect(await pullRequests(s)).toEqual([]);
+		expect(github.calls).toEqual([]);
+	});
+
+	it("is for the owner's own session: tokens, members, other workspaces, and a bare cookie cannot open one", async () => {
+		const s = await pushed();
+		const recorded = (await rows(s)).length;
+		const body = { kind: "pull_request", ...authorize(s) };
+		for (const client of ["script", "mcp"] as const) {
+			const secret = await createToken(pr, cookie, {
+				name: client,
+				client_kind: client,
+				...(client === "script"
+					? {
+							scopes: [
+								"investigations:read",
+								"investigations:write",
+								"reports:read",
+								"reports:write",
+								"verifications:write",
+								"repositories:read",
+							],
+						}
+					: {}),
+			});
+			const response = await asToken(pr, secret)("POST", actionsUrl(s), body);
+			expect(response.statusCode, client).toBe(403);
+			expect(response.json().code).toBe("session_required");
+		}
+		await addMember(ctx.db, owner.workspaceId);
+		const member = await asSession(pr, await login(pr, "member@example.com"))(
+			"POST",
+			actionsUrl(s),
+			body,
+		);
+		expect(member.statusCode).toBe(403);
+		expect(member.json().code).toBe("owner_required");
+		await createOwner(ctx.db, "other@example.com");
+		const foreign = await asSession(pr, await login(pr, "other@example.com"))(
+			"POST",
+			actionsUrl(s),
+			body,
+		);
+		expect(foreign.statusCode).toBe(404);
+		const bare = await pr.app.inject({
+			method: "POST",
+			url: actionsUrl(s),
+			headers: { cookie },
+			payload: body,
+		});
+		expect(bare.statusCode).toBe(403);
+		expect(bare.json().code).toBe("csrf_failed");
+		expect(await rows(s)).toHaveLength(recorded);
+		expect(github.calls).toEqual([]);
+	});
+
+	it("replays a repeated Idempotency-Key instead of opening a second pull request", async () => {
+		const s = await pushed();
+		const headers = { "idempotency-key": "pr-1" };
+		const first = await open(s, {}, headers);
+		const second = await open(s, {}, headers);
+		expect(first.statusCode).toBe(201);
+		expect(second.statusCode).toBe(200);
+		expect(second.json().action.id).toBe(first.json().action.id);
+		expect(github.calls).toHaveLength(1);
+		const reused = await open(s, { draft: true }, headers);
+		expect(reused.statusCode).toBe(409);
+		expect(reused.json().code).toBe("idempotency_key_reused");
+		expect(github.calls).toHaveLength(1);
+		expect(await pullRequests(s)).toHaveLength(1);
+	});
+
+	it("replays a refusal as the same refusal", async () => {
+		const s = await seedScenario();
+		pointAtGithub(s);
+		await act(s, { kind: "commit" });
+		await act(s, pushBody());
+		const headers = { "idempotency-key": "pr-missing" };
+		const first = await act(s, { kind: "pull_request" }, headers);
+		const second = await act(s, { kind: "pull_request" }, headers);
+		expect(first.statusCode).toBe(409);
+		expect(second.statusCode).toBe(409);
+		expect(second.json().code).toBe("github_token_missing");
+		expect(second.json().action_id).toBe(first.json().action_id);
+		expect(await pullRequests(s)).toHaveLength(1);
+	});
+
+	it("waits for a running action in the same repository", async () => {
+		const s = await pushed();
+		await ctx.db.insert(authorizedActions).values({
+			id: newId("act"),
+			workspaceId: owner.workspaceId,
+			patchId: s.patchId,
+			repositoryId: s.repositoryId,
+			kind: "apply",
+			status: "running",
+			requestedBy: owner.userId,
+			acknowledgedRisks: true,
+		});
+		const response = await open(s);
+		expect(response.statusCode).toBe(409);
+		expect(response.json().code).toBe("action_in_progress");
+		expect(github.calls).toEqual([]);
+	});
+
+	it("keeps the token out of every response and stored row, even when GitHub echoes it", async () => {
+		const bodies: string[] = [];
+		let n = 0;
+		for (const reply of [
+			created(),
+			{
+				status: 401,
+				json: { message: `Bad credentials for ${GITHUB_TOKEN}` },
+			},
+			{
+				status: 422,
+				json: {
+					message: "Validation Failed",
+					errors: [{ message: `see ${GITHUB_TOKEN}` }],
+				},
+			},
+			{ status: 201, drop: true },
+		] satisfies StubReply[]) {
+			const s = await pushed();
+			github.respond(() => reply);
+			const response = await open(s, {}, { "idempotency-key": `leak-${n++}` });
+			bodies.push(response.body);
+		}
+		expect(bodies.join("\n")).toContain("[REDACTED:github]");
+		const stored = JSON.stringify([
+			await ctx.db.select().from(authorizedActions),
+			await ctx.db.select().from(auditEvents),
+			await ctx.db.select().from(idempotencyKeys),
+		]);
+		for (const text of [...bodies, stored])
+			expect(text).not.toContain(GITHUB_TOKEN);
+	});
+
+	it("writes the token to no log line", async () => {
+		const lines: string[] = [];
+		const logStream = new Writable({
+			write(chunk, _encoding, done) {
+				lines.push(String(chunk));
+				done();
+			},
+		});
+		const config = loadConfig({
+			NODE_ENV: "test",
+			LOG_LEVEL: "trace",
+			DATABASE_URL: ctx.config.databaseUrl,
+			TRACERA_DATA_DIR: ctx.config.dataDir,
+			TRACERA_REPO_ROOTS: ctx.repoRoot,
+			TRACERA_SANDBOX_MODE: "disabled",
+			TRACERA_GITHUB_TOKEN: GITHUB_TOKEN,
+			TRACERA_GITHUB_API_URL: github.url,
+		});
+		const app = await buildApp({
+			config,
+			pool: ctx.pool,
+			db: ctx.db,
+			boss: ctx.boss,
+			logStream,
+		});
+		try {
+			const s = await seedScenario();
+			pointAtGithub(s);
+			const post = (extra: Record<string, unknown>) =>
+				app.inject({
+					method: "POST",
+					url: actionsUrl(s),
+					headers: { cookie, ...csrf(config) },
+					payload: { ...authorize(s), ...extra },
+				});
+			await post({ kind: "commit" });
+			await post(pushBody());
+			await post({ kind: "pull_request" });
+			github.respond(() => ({ status: 201, drop: true }));
+			await post({ kind: "pull_request" });
+		} finally {
+			await app.close();
+		}
+		const output = lines.join("");
+		// The log saw the requests, including the failure that is logged as an error.
+		expect(output).toContain("request completed");
+		expect(output).toContain("request failed");
+		expect(output).not.toContain(GITHUB_TOKEN);
 	});
 });
