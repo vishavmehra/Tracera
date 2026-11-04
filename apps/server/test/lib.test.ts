@@ -13,8 +13,10 @@ import {
 import { isPathInside, putBlob } from "../src/lib/fs.ts";
 import { isGitWorkTree, resolveCommit } from "../src/lib/git.ts";
 import {
+	AppError,
 	createRateLimiter,
 	parseCookies,
+	problemBody,
 	serializeCookie,
 } from "../src/lib/http.ts";
 import { newId } from "../src/lib/ids.ts";
@@ -73,6 +75,23 @@ describe("cookies", () => {
 		expect(cookie).toContain("Path=/");
 		expect(cookie).toContain("Max-Age=60");
 		expect(cookie).toContain("Secure");
+	});
+});
+
+describe("problem body", () => {
+	it("keeps the extra members and never lets one replace a standard member", () => {
+		const body = problemBody(
+			new AppError(409, "invalid_state", "Extraction is already running", {
+				extra: { status: "processing", code: "x", meeting_id: "mtg_1" },
+			}),
+			"req_1",
+		);
+		expect(body).toMatchObject({
+			status: 409,
+			code: "invalid_state",
+			request_id: "req_1",
+			meeting_id: "mtg_1",
+		});
 	});
 });
 

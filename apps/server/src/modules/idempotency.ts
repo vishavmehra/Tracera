@@ -11,6 +11,53 @@ import { sha256Hex } from "../lib/crypto.ts";
 import { AppError } from "../lib/http.ts";
 
 type Result<T> = { status: number; body: T };
+type Scope = {
+	workspaceId: string;
+	actorId: string;
+	key: string | undefined;
+	methodPath: string;
+	body: unknown;
+};
+
+const keyMatch = (scope: Scope, key: string) =>
+	and(
+		eq(idempotencyKeys.workspaceId, scope.workspaceId),
+		eq(idempotencyKeys.actorId, scope.actorId),
+		eq(idempotencyKeys.key, key),
+	);
+
+/**
+ * The response stored for this key and request, or null. For an operation that must answer a retry
+ * before it checks anything else (the same key with another body is a 409, as in `idempotent`).
+ */
+export async function storedResponse<T>(
+	deps: { db: Db },
+	scope: Scope,
+): Promise<Result<T> | null> {
+	if (scope.key === undefined) return null;
+	const [row] = await deps.db
+		.select()
+		.from(idempotencyKeys)
+		.where(
+			and(
+				keyMatch(scope, scope.key),
+				gt(idempotencyKeys.expiresAt, new Date()),
+			),
+		)
+		.limit(1);
+	if (!row) return null;
+	if (
+		row.requestSha256 !== sha256Hex(JSON.stringify(scope.body ?? null)) ||
+		row.methodPath !== scope.methodPath
+	) {
+		throw new AppError(
+			409,
+			"idempotency_key_reused",
+			"This Idempotency-Key was already used with a different request",
+		);
+	}
+	return { status: row.responseStatus, body: row.responseBody as T };
+}
 
 /**
  * Runs a creating operation in one transaction. With an Idempotency-Key, the same key and body within
@@ -18,13 +65,7 @@ type Result<T> = { status: number; body: T };
  */
 export async function idempotent<T>(
 	deps: { pool: pg.Pool; db: Db },
-	scope: {
-		workspaceId: string;
-		actorId: string;
-		key: string | undefined;
-		methodPath: string;
-		body: unknown;
-	},
+	scope: Scope,
 	run: (tx: { db: Db; queueDb: QueueDb }) => Promise<Result<T>>,
 ): Promise<Result<T>> {
 	if (scope.key === undefined) return withTransaction(deps.pool, run);
@@ -37,31 +78,8 @@ export async function idempotent<T>(
 		);
 	}
 	const requestSha256 = sha256Hex(JSON.stringify(scope.body ?? null));
-	const match = and(
-		eq(idempotencyKeys.workspaceId, scope.workspaceId),
-		eq(idempotencyKeys.actorId, scope.actorId),
-		eq(idempotencyKeys.key, key),
-	);
-
-	const replay = async (): Promise<Result<T> | null> => {
-		const [row] = await deps.db
-			.select()
-			.from(idempotencyKeys)
-			.where(and(match, gt(idempotencyKeys.expiresAt, new Date())))
-			.limit(1);
-		if (!row) return null;
-		if (
-			row.requestSha256 !== requestSha256 ||
-			row.methodPath !== scope.methodPath
-		) {
-			throw new AppError(
-				409,
-				"idempotency_key_reused",
-				"This Idempotency-Key was already used with a different request",
-			);
-		}
-		return { status: row.responseStatus, body: row.responseBody as T };
-	};
+	const match = keyMatch(scope, key);
+	const replay = () => storedResponse<T>(deps, scope);
 
 	const prior = await replay();
 	if (prior) return prior;

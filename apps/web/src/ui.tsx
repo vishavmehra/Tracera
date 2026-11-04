@@ -1312,6 +1312,13 @@ const ICONS = {
 			<path d="m20 20-3.5-3.5" />
 		</>
 	),
+	meetings: (
+		<>
+			<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4 4v-4H6a2 2 0 0 1-2-2z" />
+			<path d="M8 9h8" />
+			<path d="M8 12h5" />
+		</>
+	),
 	"chevron-down": <path d="m6 9 6 6 6-6" />,
 } satisfies Record<string, ReactNode>;
 

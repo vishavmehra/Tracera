@@ -6,11 +6,15 @@ import {
 	EdgeCertaintySchema,
 	EvidenceRefSchema,
 	HypothesisStateSchema,
+	IntegrationSchema,
 	InvestigationStageSchema,
 	InvestigationStatusSchema,
 	idSchema,
+	MeetingCandidateSchema,
+	MeetingSchema,
 	PatchImpactResultSchema,
 	PatchStatusSchema,
+	ProviderMeetingSchema,
 	ScopeSchema,
 	SnapshotStatusSchema,
 	StepStatusSchema,
@@ -795,6 +799,28 @@ export type VerificationEnvironment = z.infer<
 >;
 export type Check = z.infer<typeof CheckSchema>;
 export type Report = z.infer<typeof ReportSchema>["report"];
+
+// ---- Meetings and meeting integrations ---------------------------------------------------------
+
+// The contracts define the meeting views; these envelopes are the bodies that
+// apps/server/src/api/meeting-routes.ts sends around them.
+export const MeetingResponseSchema = z.object({ meeting: MeetingSchema });
+export const MeetingListSchema = z.object({
+	items: z.array(MeetingSchema),
+	next_cursor: z.string().nullable(),
+});
+export const MeetingCandidateListSchema = z.object({
+	items: z.array(MeetingCandidateSchema),
+});
+export const MeetingCandidateResponseSchema = z.object({
+	candidate: MeetingCandidateSchema,
+});
+export const IntegrationListSchema = z.object({
+	items: z.array(IntegrationSchema),
+});
+export const ProviderMeetingListSchema = z.object({
+	items: z.array(ProviderMeetingSchema),
+});
 
 /** `view()` in apps/server/src/modules/publication.ts: one authorized action and what git reported. */
 export const PatchActionSchema = z.object({

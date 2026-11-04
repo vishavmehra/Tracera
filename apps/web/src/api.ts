@@ -3,16 +3,22 @@ import {
 	type ApprovalRequest,
 	type AskQuestionRequest,
 	type ChangeImpactRequest,
+	type ConfirmMeetingCandidateRequest,
+	ConfirmMeetingCandidateResponseSchema,
 	type CreateBugReportRequest,
 	type CreateInvestigationRequest,
 	type CreateRepositoryRequest,
 	EvidenceLocationsResponseSchema,
 	EvidenceObservationsResponseSchema,
+	type ImportMeetingRequest,
 	type LoginRequest,
+	MeetingSegmentPageSchema,
 	type PatchImpactRequest,
 	type Problem,
 	ProblemSchema,
 	RuntimeEvidenceResponseSchema,
+	type UpdateMeetingCandidateRequest,
+	type UploadMeetingTranscriptRequest,
 } from "@tracera/contracts";
 import { z } from "zod";
 import {
@@ -22,8 +28,13 @@ import {
 	ChangeImpactSchema,
 	FindingsSchema,
 	HistorySchema,
+	IntegrationListSchema,
 	InvestigationListSchema,
 	InvestigationResponseSchema,
+	MeetingCandidateListSchema,
+	MeetingCandidateResponseSchema,
+	MeetingListSchema,
+	MeetingResponseSchema,
 	NodeDetailSchema,
 	PatchActionListSchema,
 	PatchActionResponseSchema,
@@ -33,6 +44,7 @@ import {
 	PatchListSchema,
 	PatchResponseSchema,
 	ProfileSchema,
+	ProviderMeetingListSchema,
 	ReadinessSchema,
 	RegisterResponseSchema,
 	ReportSchema,
@@ -96,12 +108,19 @@ const withQuery = (path: string, query?: Query) => {
 
 async function send(
 	path: string,
-	init: { method?: Method; body?: unknown; accept?: string },
+	init: {
+		method?: Method;
+		body?: unknown;
+		accept?: string;
+		idempotencyKey?: string;
+	},
 ): Promise<Response> {
 	const method = init.method ?? "GET";
 	const headers: Record<string, string> = {
 		accept: init.accept ?? "application/json",
 	};
+	// A retry of the same request after a lost response replays the stored answer instead of repeating it.
+	if (init.idempotencyKey) headers["idempotency-key"] = init.idempotencyKey;
 	// The session cookie is an ambient credential, so the API refuses cookie-authenticated mutations
 	// without this header and a same-origin Origin. Browsers set Origin.
 	if (method !== "GET") headers["x-tracera-csrf"] = "1";
@@ -144,7 +163,12 @@ async function send(
 async function request<T>(
 	path: string,
 	schema: z.ZodType<T>,
-	init: { method?: Method; body?: unknown; query?: Query } = {},
+	init: {
+		method?: Method;
+		body?: unknown;
+		query?: Query;
+		idempotencyKey?: string;
+	} = {},
 ): Promise<T> {
 	const url = withQuery(path, init.query);
 	const response = await send(url, init);
@@ -345,6 +369,106 @@ export const decidePatch = (id: string, input: ApprovalRequest) =>
 		method: "POST",
 		body: input,
 	});
+
+// ---- Meetings and meeting integrations ----
+export const listIntegrations = async () =>
+	(await request("/api/v1/integrations", IntegrationListSchema)).items;
+/** 204 No Content: there is no body to validate. */
+export const disconnectIntegration = (id: string) =>
+	request(`/api/v1/integrations/${enc(id)}`, z.undefined(), {
+		method: "DELETE",
+	});
+export const listProviderMeetings = async (id: string) =>
+	(
+		await request(
+			`/api/v1/integrations/${enc(id)}/meetings`,
+			ProviderMeetingListSchema,
+		)
+	).items;
+export const importProviderMeeting = (
+	id: string,
+	input: ImportMeetingRequest,
+	idempotencyKey: string,
+) =>
+	request(`/api/v1/integrations/${enc(id)}/import`, MeetingResponseSchema, {
+		method: "POST",
+		body: input,
+		idempotencyKey,
+	});
+
+const meetingPath = (id: string) => `/api/v1/meetings/${enc(id)}`;
+const candidatePath = (meetingId: string, candidateId: string) =>
+	`${meetingPath(meetingId)}/candidates/${enc(candidateId)}`;
+export const uploadMeetingTranscript = (
+	input: UploadMeetingTranscriptRequest,
+	idempotencyKey: string,
+) =>
+	request("/api/v1/meetings", MeetingResponseSchema, {
+		method: "POST",
+		body: input,
+		idempotencyKey,
+	});
+export const listMeetings = (limit: number) =>
+	request("/api/v1/meetings", MeetingListSchema, { query: { limit } });
+export const getMeeting = async (id: string) =>
+	(await request(meetingPath(id), MeetingResponseSchema)).meeting;
+export const listMeetingSegments = (id: string, cursor?: string) =>
+	request(`${meetingPath(id)}/segments`, MeetingSegmentPageSchema, {
+		query: { limit: 200, cursor },
+	});
+export const listMeetingCandidates = async (id: string) =>
+	(await request(`${meetingPath(id)}/candidates`, MeetingCandidateListSchema))
+		.items;
+export const requestMeetingExtraction = async (id: string) =>
+	(
+		await request(`${meetingPath(id)}/extract`, MeetingResponseSchema, {
+			method: "POST",
+		})
+	).meeting;
+export const updateMeetingCandidate = async (
+	meetingId: string,
+	candidateId: string,
+	input: UpdateMeetingCandidateRequest,
+) =>
+	(
+		await request(
+			candidatePath(meetingId, candidateId),
+			MeetingCandidateResponseSchema,
+			{ method: "PATCH", body: input },
+		)
+	).candidate;
+/** Session only; it files a bug report and starts no investigation unless the input asks for one. */
+export const confirmMeetingCandidate = (
+	meetingId: string,
+	candidateId: string,
+	input: ConfirmMeetingCandidateRequest,
+) =>
+	request(
+		`${candidatePath(meetingId, candidateId)}/confirm`,
+		ConfirmMeetingCandidateResponseSchema,
+		{ method: "POST", body: input },
+	);
+export const dismissMeetingCandidate = async (
+	meetingId: string,
+	candidateId: string,
+	reason?: string,
+) =>
+	(
+		await request(
+			`${candidatePath(meetingId, candidateId)}/dismiss`,
+			MeetingCandidateResponseSchema,
+			{ method: "POST", body: reason ? { reason } : {} },
+		)
+	).candidate;
+/** A link, not a fetch: the browser follows the server's redirect to Google and back to /meetings. */
+export const GOOGLE_CONNECT_PATH = "/api/v1/integrations/google/connect";
+/** The Markdown status summary, for download or for pasting into the meeting chat. */
+export const getMeetingSummaryMarkdown = async (id: string) =>
+	(
+		await send(`${meetingPath(id)}/summary?format=markdown`, {
+			accept: "text/markdown",
+		})
+	).text();
 
 // ---- Runtime evidence ----
 /** Sandboxed browser runs before and after a patch, with screenshots and step outcomes. */

@@ -15,6 +15,7 @@ import { AppError } from "../lib/http.ts";
 import { newId } from "../lib/ids.ts";
 import { audit } from "./audit.ts";
 import { type AuthContext, actorOf } from "./auth.ts";
+import { storedResponse } from "./idempotency.ts";
 import {
 	authorizationUrl,
 	defaultFetch,
@@ -430,6 +431,18 @@ export async function importProviderMeeting(
 ) {
 	requireConsent(input.consent_attested);
 	const connection = await requireConnection(deps.db, ctx, connectionId);
+	const methodPath = `POST /api/v1/integrations/${connectionId}/import`;
+	// A retry after a lost response gets the first answer, not the "already imported" conflict.
+	const stored = await storedResponse<
+		Awaited<ReturnType<typeof ingestTranscript>>["body"]
+	>(deps, {
+		workspaceId: ctx.workspaceId,
+		actorId: ctx.userId,
+		key: meta.idempotencyKey,
+		methodPath,
+		body: input,
+	});
+	if (stored) return stored;
 	const [existing] = await deps.db
 		.select({ id: meetingSessions.id })
 		.from(meetingSessions)
@@ -484,7 +497,7 @@ export async function importProviderMeeting(
 		},
 		{
 			...meta,
-			methodPath: `POST /api/v1/integrations/${connectionId}/import`,
+			methodPath,
 			body: input,
 		},
 	);

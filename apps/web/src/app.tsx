@@ -29,6 +29,8 @@ import {
 	InvestigationsPage,
 	NewInvestigationPage,
 } from "./investigations.tsx";
+import { MeetingPage } from "./meeting.tsx";
+import { MeetingsPage } from "./meetings.tsx";
 import { QuestionPage, QuestionsPage } from "./questions.tsx";
 import { RepositoriesPage } from "./repositories.tsx";
 import {
@@ -117,6 +119,12 @@ const NAV: readonly NavItem[] = [
 		label: "Investigations",
 		icon: "investigation",
 		current: (path) => path.startsWith("/investigations"),
+	},
+	{
+		to: "/meetings",
+		label: "Meetings",
+		icon: "meetings",
+		current: (path) => path.startsWith("/meetings"),
 	},
 ];
 
@@ -421,6 +429,8 @@ export const routes: RouteObject[] = [
 				path: "investigations/:investigationId/report",
 				element: <ReportPage />,
 			},
+			{ path: "meetings", element: <MeetingsPage /> },
+			{ path: "meetings/:meetingId", element: <MeetingPage /> },
 			{ path: "*", element: <NotFound /> },
 		],
 	},

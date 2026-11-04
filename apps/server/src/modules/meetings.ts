@@ -701,7 +701,7 @@ export async function requestExtraction(
 				"invalid_state",
 				"Extraction is already running",
 				{
-					extra: { status: meeting.status },
+					extra: { meeting_status: meeting.status },
 				},
 			);
 		}

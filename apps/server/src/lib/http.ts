@@ -38,6 +38,8 @@ const TITLES: Record<number, string> = {
 
 export function problemBody(error: AppError, requestId: string) {
 	return {
+		// Extra members come first so one named like a standard member cannot replace it.
+		...(error.extra ?? {}),
 		type: `urn:tracera:problem:${error.code}`,
 		title: TITLES[error.status] ?? "Error",
 		status: error.status,
@@ -45,7 +47,6 @@ export function problemBody(error: AppError, requestId: string) {
 		code: error.code,
 		request_id: requestId,
 		...(error.errors ? { errors: error.errors } : {}),
-		...(error.extra ?? {}),
 	};
 }
 
