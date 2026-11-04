@@ -8,6 +8,8 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "setup": "node scripts/setup-local.ts",
+    "local": "node scripts/local.ts",
     "dev": "node scripts/dev.ts",
     "start": "node --env-file-if-exists=.env scripts/start.ts",
     "dev:api": "node --env-file-if-exists=.env --watch apps/server/src/main-api.ts",

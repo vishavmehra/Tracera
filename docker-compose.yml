@@ -1,4 +1,5 @@
-# Local development services: Postgres only.
+# Local services: Postgres only, published on the loopback interface. POSTGRES_PASSWORD (required)
+# and POSTGRES_PORT (optional, default 5432) come from .env; DATABASE_URL must use the same values.
 services:
   postgres:
     image: postgres:17
@@ -8,7 +9,7 @@ services:
       POSTGRES_DB: tracera
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - tracera-pg:/var/lib/postgresql/data
     healthcheck:

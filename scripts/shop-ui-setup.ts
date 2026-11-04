@@ -1,9 +1,10 @@
 // Materializes the Shop UI demo fixture (fixtures/shop-ui) as a git repository that can be registered as
 // a local-path repository. History: a correct first version, then a refactor that plants the bug (an
 // order of exactly $50.00 is charged shipping although the page promises free shipping from $50).
-// Re-running rebuilds identical commits.
+// Re-running rebuilds identical commits, unless --if-absent is given and the repository already exists,
+// which leaves it untouched (patches applied or branches committed there are kept).
 //
-//   node scripts/shop-ui-setup.ts [directory]    default: <first TRACERA_REPO_ROOTS entry>/shop-ui
+//   node scripts/shop-ui-setup.ts [directory] [--if-absent]    default: <first TRACERA_REPO_ROOTS entry>/shop-ui
 import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isPathInside } from "../apps/server/src/lib/fs.ts";
@@ -77,20 +78,29 @@ export function setupShopUi(target: string): {
 }
 
 if (import.meta.main) {
+	const args = process.argv.slice(2);
 	const root = process.env.TRACERA_REPO_ROOTS?.split(";")[0]?.trim();
-	const target = process.argv[2] ?? (root ? path.join(root, "shop-ui") : null);
+	const directory = args.find((arg) => !arg.startsWith("--"));
+	const target = directory ?? (root ? path.join(root, "shop-ui") : null);
 	if (!target) {
 		console.error(
 			"Pass a directory, or set TRACERA_REPO_ROOTS so the repository is created inside it",
 		);
 		process.exit(1);
 	}
-	const result = setupShopUi(path.resolve(target));
-	console.log(`Shop UI demo repository: ${result.path}`);
-	console.log(
-		`  main  ${result.regression}  (planted bug: free shipping at exactly $50.00)`,
-	);
-	console.log(
-		`  Register it as a local_path repository with ${JSON.stringify(SHOP_UI_REPOSITORY)}`,
-	);
+	const absolute = path.resolve(target);
+	if (args.includes("--if-absent") && existsSync(path.join(absolute, ".git"))) {
+		console.log(
+			`Shop UI demo repository already present; left unchanged: ${absolute}`,
+		);
+	} else {
+		const result = setupShopUi(absolute);
+		console.log(`Shop UI demo repository: ${result.path}`);
+		console.log(
+			`  main  ${result.regression}  (planted bug: free shipping at exactly $50.00)`,
+		);
+		console.log(
+			`  Register it as a local_path repository with ${JSON.stringify(SHOP_UI_REPOSITORY)}`,
+		);
+	}
 }

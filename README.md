@@ -43,27 +43,33 @@ Tracera's inference runs on Meta's Muse models through the Meta Model API (Muse 
 
 ## Getting started
 
-Prerequisites: Node.js 24, Docker, and git.
+Prerequisites: Node.js 24, git, and Docker (Docker Desktop on Windows and macOS). Docker runs the PostgreSQL database and the sandbox that runs repository code. Without it everything except sandboxed reproduction and verification still works, provided `DATABASE_URL` points at a PostgreSQL you run yourself.
 
 ```sh
-npm ci
-cp .env.example .env     # then edit .env (variables below)
-npm run db:up            # PostgreSQL in Docker
-npm run db:migrate
-npm run db:seed          # creates the owner account from the seed variables
-npm run sandbox:pull     # pulls the pinned sandbox images
-npm run dev              # API and worker, http://127.0.0.1:8787
-npm run dev:web          # web app, http://127.0.0.1:5173
+npm ci            # installs the dependencies of every workspace
+npm run setup     # checks the prerequisites, creates .env, starts PostgreSQL, applies the schema, creates the owner account and the demo repositories
+npm run local     # starts the API, the worker, and the web app
 ```
 
-Open the web app and sign in with the seed owner credentials. With the Vite dev server, `TRACERA_PUBLIC_URL` must equal the web origin (`http://127.0.0.1:5173`): the API rejects changes whose origin differs.
+Open <http://127.0.0.1:5173> and sign in. The owner's email is `TRACERA_SEED_OWNER_EMAIL` and its password is `TRACERA_SEED_OWNER_PASSWORD`, both in `.env`. Until you configure a model provider (see Models) the models are the deterministic mock, and every mock result is labelled.
 
-Set these in `.env` (placeholders shown; `.env.example` lists every option):
+**Open the app at `127.0.0.1`, not `localhost`.** The API accepts a change only when the browser's origin equals `TRACERA_PUBLIC_URL`. `npm run local` sets that to `http://127.0.0.1:<TRACERA_WEB_PORT>`, the web app's address; the web app forwards `/api` to the API, so the browser talks to that one address only. Any other spelling (`localhost`, a LAN address) makes sign-in and every save fail.
+
+About `npm run setup`:
+
+- It creates `.env` from `.env.example` only when there is none, with a generated database password, owner password, and encryption key. An existing `.env` is never changed, so running setup again is safe: it repeats the checks and the migrations and leaves existing demo repositories alone.
+- PostgreSQL takes the first free port from 5432, the web app uses 5173, and the API 8787. To choose others, set `POSTGRES_PORT`, `TRACERA_WEB_PORT`, or `TRACERA_API_PORT` in your shell before the first run, or edit `.env` afterwards (with `POSTGRES_PORT`, change the port in `DATABASE_URL` too). The same goes for `TRACERA_DATA_DIR`, `TRACERA_REPO_ROOTS`, `TRACERA_SEED_OWNER_EMAIL`, and `TRACERA_SEED_OWNER_PASSWORD`.
+- Tracera keeps its files in `~/.tracera` (`TRACERA_DATA_DIR`). Repositories you register must be inside the repository folder, `~/tracera-repos` by default (`TRACERA_REPO_ROOTS`). Keep both outside the Tracera source tree, and the repository folder outside the data directory. The demo repositories are the Bench Shop, in the data directory, and the Shop UI, as `shop-ui` in the repository folder.
+- `npm run setup -- --pull-images` also pulls the pinned sandbox images, a large download that repository code needs in order to run.
+- `npm run setup` and `npm run local` refuse a `DATABASE_URL` that is not on this machine, because they change that database; add `-- --allow-remote-db` only for a database you mean to change.
+- To configure by hand instead, copy `.env.example` to `.env`, replace every placeholder, and run `npm run db:up`, `npm run db:migrate`, `npm run db:seed`, and `npm run sandbox:pull`. For development, `npm run dev` (API and worker) and `npm run dev:web` (web app) run the pieces separately, with file watching.
+
+For live models, set `TRACERA_INFERENCE_PROVIDER=meta` and `TRACERA_META_API_KEY` in `.env` and start again. These are the settings you are most likely to change (placeholders shown; `.env.example` lists every option):
 
 ```sh
 POSTGRES_PASSWORD=<database-password>
 DATABASE_URL=postgres://tracera:<database-password>@127.0.0.1:5432/tracera
-TRACERA_PUBLIC_URL=<web origin>
+TRACERA_PUBLIC_URL=<web origin, http://127.0.0.1:5173 with npm run local>
 TRACERA_REPO_ROOTS=<absolute paths, semicolon-separated, that may contain repositories>
 TRACERA_SEED_OWNER_EMAIL=<owner email>
 TRACERA_SEED_OWNER_PASSWORD=<at least 12 characters>
@@ -81,7 +87,7 @@ TRACERA_MODEL_SEGMENT=<model id, default sam-3.1>
 TRACERA_MODEL_MEETING=<model id, default TRACERA_MODEL_REASONING>
 GOOGLE_CLIENT_ID=<OAuth client id>
 GOOGLE_CLIENT_SECRET=<OAuth client secret>
-GOOGLE_REDIRECT_URI=<API origin>/api/v1/integrations/google/callback
+GOOGLE_REDIRECT_URI=<web origin>/api/v1/integrations/google/callback
 TRACERA_ENCRYPTION_KEY=<32 random bytes, base64>
 ```
 
@@ -161,7 +167,7 @@ Integration tests run against the local Docker PostgreSQL and refuse remote host
 
 ## Demo app
 
-`fixtures/shop-ui` is a small cart page with one planted bug: an order of exactly $50.00 is charged shipping although the page promises free shipping from $50. `npm run demo:setup -- <directory inside TRACERA_REPO_ROOTS>` creates it as a git repository. Register that path as a local repository with the commands `npm ci --ignore-scripts`, `npm test`, and `npm run start` and the app `{ "port": 4173, "ready_path": "/health", "base_url_path": "/cart" }`, then report the bug with the page URL `http://localhost:4173/cart`. Tracera starts the app in the sandbox, reproduces the bug in a browser, and verifies the patch by running the same steps against the patched app; the patch review page shows the before and after screenshots with each step's result. The sandboxed browser run needs Docker, so this works locally and not on the hosted deployment.
+`fixtures/shop-ui` is a small cart page with one planted bug: an order of exactly $50.00 is charged shipping although the page promises free shipping from $50. `npm run setup` creates it as a git repository named `shop-ui` in your repository folder (`npm run demo:setup` rebuilds it from scratch, and `npm run demo:setup -- <directory inside TRACERA_REPO_ROOTS>` puts it elsewhere). Register that path as a local repository with the commands `npm ci --ignore-scripts`, `npm test`, and `npm run start` and the app `{ "port": 4173, "ready_path": "/health", "base_url_path": "/cart" }`, then report the bug with the page URL `http://localhost:4173/cart`. Tracera starts the app in the sandbox, reproduces the bug in a browser, and verifies the patch by running the same steps against the patched app; the patch review page shows the before and after screenshots with each step's result. The sandboxed browser run needs Docker, so this works locally and not on the hosted deployment.
 
 ## Security model
 
